@@ -46,13 +46,6 @@ class DeliveryForm(BootstrapFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._init_bootstrap()
-        if "status" in self.fields:
-            allowed = ["Не назначено", "Запланировано"]
-            self.fields["status"].choices = [
-                (value, label)
-                for value, label in self.fields["status"].choices
-                if value in allowed
-            ]
         for name in ("planned_at", "departure_time", "delivered_at"):
             if name in self.fields:
                 self.fields[name].input_formats = ["%Y-%m-%dT%H:%M"]
@@ -185,10 +178,9 @@ class LogisticianProfileForm(BootstrapFormMixin, forms.ModelForm):
         label="Доступные типы транспорта",
         required=False,
         choices=[
-            ("bike", "Вело"),
-            ("car", "Легковой"),
+            ("car", "Авто"),
             ("van", "Фургон"),
-            ("truck", "Грузовик"),
+            ("refrigerated", "Рефрижератор"),
         ],
         widget=forms.CheckboxSelectMultiple,
     )

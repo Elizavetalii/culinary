@@ -162,22 +162,37 @@
   <div class="card mt-3">
     <h6>Карта маршрута</h6>
     <div id="route-map" style="height: 360px;"></div>
+    <div id="route-map-fallback" class="alert alert-warning mt-2 py-2 small" style="display:none">
+      Карту не удалось загрузить. Адреса маршрута остаются доступны в таблице остановок.
+    </div>
   </div>
+
+  {% include "communications/entity_comments.html" %}
 
   {{ map_payload|json_script:"route-data" }}
   <script>
     async function geocodeAddress(address) {
-      const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
-      const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
-      const data = await res.json();
-      if (!data.length) return null;
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      try {
+        const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
+        const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.length) return null;
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      } catch (error) {
+        return null;
+      }
     }
 
     async function initRouteMap() {
       const payload = JSON.parse(document.getElementById("route-data").textContent || "{}");
       const mapEl = document.getElementById("route-map");
       if (!mapEl) return;
+      const fallback = document.getElementById("route-map-fallback");
+      if (!window.L) {
+        if (fallback) fallback.style.display = "block";
+        return;
+      }
       const map = L.map(mapEl);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -194,7 +209,7 @@
         }
         if (point) {
           points.push(point);
-          L.marker([point.lat, point.lng]).addTo(map).bindPopup(stop.address || "Остановка");
+          L.marker([point.lat, point.lng]).addTo(map).bindPopup(stop.kind === "depot" ? "Склад: " + (stop.address || "") : (stop.address || "Остановка"));
         }
       }
 
@@ -204,6 +219,7 @@
         map.fitBounds(latLngs, { padding: [30, 30] });
       } else {
         map.setView([55.751244, 37.618423], 10);
+        if (fallback) fallback.style.display = "block";
       }
     }
   </script>

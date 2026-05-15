@@ -33,7 +33,24 @@
           <div class="col-md-6"><strong>Менеджер:</strong> {{ client.responsible_manager.full_name|default:"—" }}</div>
           <div class="col-md-6"><strong>Телефон:</strong> {{ client.phone|default:"—" }}</div>
           <div class="col-md-6"><strong>Email:</strong> {{ client.email|default:"—" }}</div>
-          <div class="col-12"><strong>Адрес доставки:</strong> {{ client.default_delivery_address|default:"—" }}</div>
+          <div class="col-12">
+            <strong>Адрес доставки:</strong>
+            {% if client.default_delivery_address %}
+              <div class="mt-2 p-3 rounded border" style="background: var(--bg-2);">
+                <div class="fw-semibold">{{ client.default_delivery_address }}</div>
+                <a
+                  class="btn btn-sm btn-outline-secondary mt-2"
+                  href="https://www.google.com/maps/search/?api=1&query={{ client.default_delivery_address|urlencode }}"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Открыть в Google Maps
+                </a>
+              </div>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -156,4 +173,6 @@
       </div>
     </div>
   </div>
+
+  {% include "communications/entity_comments.html" %}
 {% endblock %}

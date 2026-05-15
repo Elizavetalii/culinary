@@ -130,6 +130,8 @@
     </form>
   </div>
 
+  {% include "communications/entity_comments.html" %}
+
   {% if dish_prices %}
     {{ dish_prices|json_script:"dish-price-data" }}
   {% endif %}

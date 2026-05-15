@@ -42,8 +42,20 @@ class Command(BaseCommand):
             )
             logistic_user.roles.add(logistic_role)
 
-        transports = ["Авто", "Фургон", "Грузовик", "Вело"]
+        transports = ["Авто", "Фургон", "Рефрижератор"]
         zones = ["Центр", "Север", "Юг", "Восток", "Запад"]
+        moscow_points = [
+            ("Москва, Красная площадь, 1", Decimal("55.753930"), Decimal("37.620795")),
+            ("Москва, Тверская улица, 7", Decimal("55.760186"), Decimal("37.609543")),
+            ("Москва, Новый Арбат, 15", Decimal("55.752815"), Decimal("37.592934")),
+            ("Москва, Кутузовский проспект, 2/1", Decimal("55.749806"), Decimal("37.566734")),
+            ("Москва, Ленинградский проспект, 36", Decimal("55.789742"), Decimal("37.557214")),
+            ("Москва, Большая Дмитровка, 11", Decimal("55.762484"), Decimal("37.612799")),
+            ("Москва, Мясницкая улица, 24", Decimal("55.764799"), Decimal("37.637010")),
+            ("Москва, Пятницкая улица, 25", Decimal("55.740821"), Decimal("37.627093")),
+            ("Москва, Земляной Вал, 33", Decimal("55.757557"), Decimal("37.659548")),
+            ("Москва, Пресненская набережная, 12", Decimal("55.749451"), Decimal("37.536924")),
+        ]
 
         couriers = []
         for i in range(10):
@@ -85,14 +97,15 @@ class Command(BaseCommand):
 
         clients = list(Client.objects.all())
         if len(clients) < 10:
-            for _ in range(10 - len(clients)):
+            for idx in range(10 - len(clients)):
+                address, _, _ = moscow_points[idx % len(moscow_points)]
                 clients.append(
                     Client.objects.create(
                         name=fake.company(),
                         client_type="store",
                         inn=str(fake.random_number(digits=10)),
                         kpp=str(fake.random_number(digits=9)),
-                        default_delivery_address=fake.address(),
+                        default_delivery_address=address,
                         email=fake.email(),
                         phone=fake.phone_number(),
                         status="active",
@@ -104,6 +117,7 @@ class Command(BaseCommand):
         for idx in range(50):
             order_number = f"LOG-{start_number + idx}"
             client = random.choice(clients)
+            address, _, _ = moscow_points[idx % len(moscow_points)]
             order, _ = Order.objects.get_or_create(
                 order_number=order_number,
                 defaults={
@@ -112,10 +126,13 @@ class Command(BaseCommand):
                     "status": random.choice(
                         [OrderStatus.REVIEW, OrderStatus.IN_PRODUCTION, OrderStatus.SHIPPED]
                     ),
-                    "address": client.default_delivery_address or fake.address(),
+                    "address": client.default_delivery_address or address,
                     "total_amount": Decimal(random.randint(10000, 150000)),
                 },
             )
+            if not order.address or "Пример" in order.address:
+                order.address = address
+                order.save(update_fields=["address"])
             orders.append(order)
 
         deliveries = []
@@ -155,6 +172,7 @@ class Command(BaseCommand):
             slice_start = route_idx * per_route
             slice_end = slice_start + per_route
             for seq, delivery in enumerate(stop_deliveries[slice_start:slice_end], start=1):
+                _, lat, lng = moscow_points[(slice_start + seq - 1) % len(moscow_points)]
                 RouteStop.objects.get_or_create(
                     route=route,
                     delivery=delivery,
@@ -162,8 +180,8 @@ class Command(BaseCommand):
                         "sequence_index": seq,
                         "planned_time": timezone.now(),
                         "status": random.choice(["Запланирована", "В пути", "Доставлено"]),
-                        "latitude": Decimal("55.%03d" % random.randint(600, 900)),
-                        "longitude": Decimal("37.%03d" % random.randint(400, 800)),
+                        "latitude": lat,
+                        "longitude": lng,
                     },
                 )
 

@@ -35,7 +35,20 @@
         {% endfor %}
       </select>
       <button class="btn btn-outline-secondary" type="submit">Показать</button>
-      <a class="btn btn-primary" href="/reports/create/?from={{ request.GET.from }}&to={{ request.GET.to }}">Сформировать отчёт</a>
+      <div class="dropdown">
+        <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+          Сформировать отчёт
+        </button>
+        <ul class="dropdown-menu">
+          {% for fmt in report_formats %}
+            <li>
+              <a class="dropdown-item" href="/reports/analytics/export/?format={{ fmt }}&from={{ period_from|date:'Y-m-d' }}&to={{ period_to|date:'Y-m-d' }}{% if request.GET.client %}&client={{ request.GET.client }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}">
+                {{ fmt|upper }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
     </form>
   </div>
 
@@ -56,6 +69,27 @@
       <div class="card kpi-card">
         <div class="kpi-value">{{ avg_check }}</div>
         <div class="kpi-label">Средний чек</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ analytics_payload.summary.active_clients }}</div>
+        <div class="kpi-label">Активных клиентов</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ analytics_payload.summary.deliveries }}</div>
+        <div class="kpi-label">Доставок за период</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ analytics_payload.summary.delivery_success_rate }}%</div>
+        <div class="kpi-label">Успешность доставок</div>
       </div>
     </div>
   </div>

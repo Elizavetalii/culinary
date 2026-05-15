@@ -1,0 +1,20 @@
+{% if entity_comment_target %}
+  <div class="card mt-3">
+    <h6>Комментарии</h6>
+    <div class="list-group list-group-flush mb-3">
+      {% for comment in entity_comments %}
+        <div class="list-group-item bg-transparent px-0">
+          <div class="small text-muted">{{ comment.author.full_name|default:comment.author.username }} · {{ comment.created_at|date:"d.m.Y H:i" }}</div>
+          <div>{{ comment.body|linebreaksbr }}</div>
+        </div>
+      {% empty %}
+        <div class="text-muted">Комментариев пока нет.</div>
+      {% endfor %}
+    </div>
+    <form method="post" action="/chat/comments/{{ entity_comment_target.app_label }}/{{ entity_comment_target.model }}/{{ entity_comment_target.object_id }}/">
+      {% csrf_token %}
+      {{ entity_comment_form.body }}
+      <button class="btn btn-outline-secondary mt-2">Добавить комментарий</button>
+    </form>
+  </div>
+{% endif %}

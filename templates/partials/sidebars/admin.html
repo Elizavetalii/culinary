@@ -25,9 +25,14 @@
   <a href="/admin-panel/data-check/" class="{% if '/admin-panel/data-check/' in request.path %}active{% endif %}">
     <i data-lucide="check-square"></i>Проверка данных
   </a>
+  <a href="/admin-panel/analytics/" class="{% if '/admin-panel/analytics/' in request.path %}active{% endif %}">
+    <i data-lucide="bar-chart-3"></i>Аналитика
+  </a>
   <a href="/admin-panel/backups/" class="{% if '/admin-panel/backups/' in request.path %}active{% endif %}">
     <i data-lucide="database-backup"></i>Резервные копии
   </a>
+  <div class="menu-title">Связь</div>
+  {% include "partials/chat_menu_item.html" %}
   <div class="menu-title">Данные</div>
   <a href="/clients/" class="{% if '/clients/' in request.path %}active{% endif %}">
     <i data-lucide="users"></i>Клиенты

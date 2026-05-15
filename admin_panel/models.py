@@ -8,7 +8,7 @@ class Backup(models.Model):
         ("restored", "Восстановлен"),
         ("failed", "Ошибка"),
     ]
-    file_path = models.CharField("Файл", max_length=255)
+    file_path = models.CharField("Файл", max_length=500)
     status = models.CharField("Статус", max_length=20, choices=STATUS_CHOICES, default="created")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField("Создан", auto_now_add=True)

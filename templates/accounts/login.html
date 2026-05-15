@@ -15,12 +15,88 @@
       <input type="text" name="username" class="form-control" placeholder="name@company.ru" required>
     </div>
     <div class="mb-3">
-      <label class="form-label">Пароль</label>
-      <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+      <label class="form-label" for="login-password">Пароль</label>
+      <div class="position-relative">
+        <input
+          type="password"
+          id="login-password"
+          name="password"
+          class="form-control pe-5"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          required
+        >
+        <button
+          type="button"
+          class="password-toggle"
+          aria-label="Показать пароль"
+          aria-pressed="false"
+          data-password-toggle
+        >
+          <svg class="password-eye" data-icon="show" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg class="password-eye d-none" data-icon="hide" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-2.19 3.24"></path>
+            <path d="M6.61 6.61C3.74 8.56 2 12 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+            <path d="M2 2l20 20"></path>
+            <path d="M9.88 9.88A3 3 0 0 0 14.12 14.12"></path>
+          </svg>
+        </button>
+      </div>
     </div>
     <button class="btn btn-primary w-100">Войти</button>
   </form>
   <div class="text-center mt-3">
     <a href="/password-reset/" class="link-muted">Забыли пароль?</a>
   </div>
+  <style>
+    .password-toggle {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .password-toggle:hover,
+    .password-toggle:focus {
+      color: var(--primary);
+      background: rgba(37, 99, 235, 0.08);
+      outline: none;
+    }
+  </style>
+  <script>
+    (function() {
+      const passwordInput = document.getElementById("login-password");
+      const toggle = document.querySelector("[data-password-toggle]");
+      if (!passwordInput || !toggle) return;
+
+      const showIcon = toggle.querySelector('[data-icon="show"]');
+      const hideIcon = toggle.querySelector('[data-icon="hide"]');
+
+      toggle.addEventListener("click", () => {
+        const isVisible = passwordInput.type === "text";
+        passwordInput.type = isVisible ? "password" : "text";
+        toggle.setAttribute("aria-pressed", String(!isVisible));
+        toggle.setAttribute("aria-label", isVisible ? "Показать пароль" : "Скрыть пароль");
+        if (showIcon && hideIcon) {
+          showIcon.classList.toggle("d-none", !isVisible);
+          hideIcon.classList.toggle("d-none", isVisible);
+        }
+        passwordInput.focus();
+      });
+    })();
+  </script>
 {% endblock %}

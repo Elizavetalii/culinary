@@ -1,0 +1,1394 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict FneQlkpH4XjRj9cd8RUWOFlPCONy6aJFJS0QTvkm3eLmwFFvmcSjpeluixVaJO0
+
+-- Dumped from database version 14.20 (Homebrew)
+-- Dumped by pg_dump version 14.20 (Homebrew)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: crm_recalculate_order_total(bigint); Type: FUNCTION; Schema: public; Owner: artculinary_user
+--
+
+CREATE FUNCTION public.crm_recalculate_order_total(p_order_id bigint) RETURNS numeric
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_total NUMERIC;
+BEGIN
+    SELECT COALESCE(SUM(line_total), 0)
+      INTO v_total
+      FROM crm_orderitem
+     WHERE order_id = p_order_id;
+
+    UPDATE crm_order
+       SET total_amount = v_total
+     WHERE id = p_order_id;
+
+    RETURN v_total;
+END;
+$$;
+
+
+ALTER FUNCTION public.crm_recalculate_order_total(p_order_id bigint) OWNER TO artculinary_user;
+
+--
+-- Name: crm_set_order_status(bigint, character varying); Type: PROCEDURE; Schema: public; Owner: artculinary_user
+--
+
+CREATE PROCEDURE public.crm_set_order_status(IN p_order_id bigint, IN p_status character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE crm_order
+       SET status = p_status,
+           updated_at = NOW()
+     WHERE id = p_order_id;
+END;
+$$;
+
+
+ALTER PROCEDURE public.crm_set_order_status(IN p_order_id bigint, IN p_status character varying) OWNER TO artculinary_user;
+
+--
+-- Name: crm_tg_check_ingredient_reservation(); Type: FUNCTION; Schema: public; Owner: artculinary_user
+--
+
+CREATE FUNCTION public.crm_tg_check_ingredient_reservation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_reserved NUMERIC;
+    v_stock NUMERIC;
+BEGIN
+    SELECT COALESCE(SUM(quantity), 0)
+      INTO v_reserved
+      FROM crm_ingredientreservation
+     WHERE ingredient_id = NEW.ingredient_id
+       AND production_date = NEW.production_date
+       AND id <> COALESCE(NEW.id, -1);
+
+    SELECT COALESCE(quantity, 0)
+      INTO v_stock
+      FROM crm_ingredientstock
+     WHERE ingredient_id = NEW.ingredient_id;
+
+    IF (v_reserved + NEW.quantity) > v_stock THEN
+        RAISE EXCEPTION 'insufficient ingredient stock for ingredient_id=% and production_date=%',
+            NEW.ingredient_id, NEW.production_date
+            USING ERRCODE = '22000';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.crm_tg_check_ingredient_reservation() OWNER TO artculinary_user;
+
+--
+-- Name: crm_tg_orderitem_total_recalc(); Type: FUNCTION; Schema: public; Owner: artculinary_user
+--
+
+CREATE FUNCTION public.crm_tg_orderitem_total_recalc() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        PERFORM crm_recalculate_order_total(OLD.order_id);
+    ELSE
+        PERFORM crm_recalculate_order_total(NEW.order_id);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION public.crm_tg_orderitem_total_recalc() OWNER TO artculinary_user;
+
+--
+-- Name: crm_tg_prepare_orderitem(); Type: FUNCTION; Schema: public; Owner: artculinary_user
+--
+
+CREATE FUNCTION public.crm_tg_prepare_orderitem() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.quantity <= 0 THEN
+        RAISE EXCEPTION 'quantity must be greater than 0'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF NEW.unit_price < 0 THEN
+        RAISE EXCEPTION 'unit_price cannot be negative'
+            USING ERRCODE = '22023';
+    END IF;
+
+    NEW.line_total := ROUND(NEW.quantity * NEW.unit_price, 2);
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.crm_tg_prepare_orderitem() OWNER TO artculinary_user;
+
+--
+-- Name: crm_tg_validate_delivery_date(); Type: FUNCTION; Schema: public; Owner: artculinary_user
+--
+
+CREATE FUNCTION public.crm_tg_validate_delivery_date() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.delivery_date IS NOT NULL AND NEW.delivery_date < CURRENT_DATE THEN
+        RAISE EXCEPTION 'delivery_date (%) cannot be in the past', NEW.delivery_date
+            USING ERRCODE = '22007';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.crm_tg_validate_delivery_date() OWNER TO artculinary_user;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: admin_panel_backup; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.admin_panel_backup (
+    id bigint NOT NULL,
+    file_path character varying(255) NOT NULL,
+    status character varying(20) NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    created_by_id bigint
+);
+
+
+ALTER TABLE public.admin_panel_backup OWNER TO artculinary_user;
+
+--
+-- Name: admin_panel_backup_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.admin_panel_backup ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.admin_panel_backup_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: admin_panel_backupschedule; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.admin_panel_backupschedule (
+    id bigint NOT NULL,
+    frequency character varying(20) NOT NULL,
+    is_active boolean NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public.admin_panel_backupschedule OWNER TO artculinary_user;
+
+--
+-- Name: admin_panel_backupschedule_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.admin_panel_backupschedule ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.admin_panel_backupschedule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: auth_group; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.auth_group (
+    id integer NOT NULL,
+    name character varying(150) NOT NULL
+);
+
+
+ALTER TABLE public.auth_group OWNER TO artculinary_user;
+
+--
+-- Name: auth_group_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.auth_group ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.auth_group_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: auth_group_permissions; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.auth_group_permissions (
+    id bigint NOT NULL,
+    group_id integer NOT NULL,
+    permission_id integer NOT NULL
+);
+
+
+ALTER TABLE public.auth_group_permissions OWNER TO artculinary_user;
+
+--
+-- Name: auth_group_permissions_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.auth_group_permissions ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.auth_group_permissions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: auth_permission; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.auth_permission (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    content_type_id integer NOT NULL,
+    codename character varying(100) NOT NULL
+);
+
+
+ALTER TABLE public.auth_permission OWNER TO artculinary_user;
+
+--
+-- Name: auth_permission_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.auth_permission ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.auth_permission_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: communications_directmessage; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.communications_directmessage (
+    id bigint NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    read_at timestamp with time zone,
+    recipient_id bigint NOT NULL,
+    sender_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.communications_directmessage OWNER TO artculinary_user;
+
+--
+-- Name: communications_directmessage_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.communications_directmessage ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.communications_directmessage_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: communications_entitycomment; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.communications_entitycomment (
+    id bigint NOT NULL,
+    object_id integer NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    author_id bigint NOT NULL,
+    content_type_id integer NOT NULL,
+    CONSTRAINT communications_entitycomment_object_id_check CHECK ((object_id >= 0))
+);
+
+
+ALTER TABLE public.communications_entitycomment OWNER TO artculinary_user;
+
+--
+-- Name: communications_entitycomment_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.communications_entitycomment ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.communications_entitycomment_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_auditlog; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_auditlog (
+    id bigint NOT NULL,
+    actor_role character varying(64) NOT NULL,
+    object_type character varying(64) NOT NULL,
+    object_id integer NOT NULL,
+    field_name character varying(64) NOT NULL,
+    old_value text NOT NULL,
+    new_value text NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    actor_id bigint,
+    CONSTRAINT crm_auditlog_object_id_check CHECK ((object_id >= 0))
+);
+
+
+ALTER TABLE public.crm_auditlog OWNER TO artculinary_user;
+
+--
+-- Name: crm_auditlog_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_auditlog ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_auditlog_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_client; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_client (
+    id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    client_type character varying(32) NOT NULL,
+    inn character varying(20) NOT NULL,
+    kpp character varying(20) NOT NULL,
+    default_delivery_address character varying(255) NOT NULL,
+    email character varying(254) NOT NULL,
+    phone character varying(32) NOT NULL,
+    status character varying(20) NOT NULL,
+    responsible_manager_id bigint,
+    current_stage_id bigint,
+    created_at timestamp with time zone,
+    daily_max_weight_kg numeric(10,2),
+    daily_min_qty numeric(10,2),
+    guaranteed_volume_kg numeric(10,2)
+);
+
+
+ALTER TABLE public.crm_client OWNER TO artculinary_user;
+
+--
+-- Name: crm_client_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_client ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_client_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_clientallowedtechcard; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_clientallowedtechcard (
+    id bigint NOT NULL,
+    client_id bigint NOT NULL,
+    tech_card_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_clientallowedtechcard OWNER TO artculinary_user;
+
+--
+-- Name: crm_clientallowedtechcard_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_clientallowedtechcard ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_clientallowedtechcard_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_clientcontact; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_clientcontact (
+    id bigint NOT NULL,
+    full_name character varying(255) NOT NULL,
+    "position" character varying(128) NOT NULL,
+    phone character varying(32) NOT NULL,
+    email character varying(254) NOT NULL,
+    is_primary boolean NOT NULL,
+    client_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_clientcontact OWNER TO artculinary_user;
+
+--
+-- Name: crm_clientcontact_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_clientcontact ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_clientcontact_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_clientstagehistory; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_clientstagehistory (
+    id bigint NOT NULL,
+    changed_at timestamp with time zone NOT NULL,
+    comment text NOT NULL,
+    changed_by_id bigint,
+    client_id bigint NOT NULL,
+    stage_id bigint
+);
+
+
+ALTER TABLE public.crm_clientstagehistory OWNER TO artculinary_user;
+
+--
+-- Name: crm_clientstagehistory_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_clientstagehistory ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_clientstagehistory_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_cooperationstage; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_cooperationstage (
+    id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    "order" smallint NOT NULL,
+    is_active boolean NOT NULL,
+    CONSTRAINT crm_cooperationstage_order_check CHECK (("order" >= 0))
+);
+
+
+ALTER TABLE public.crm_cooperationstage OWNER TO artculinary_user;
+
+--
+-- Name: crm_cooperationstage_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_cooperationstage ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_cooperationstage_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_courier; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_courier (
+    id bigint NOT NULL,
+    transport_type character varying(64) NOT NULL,
+    experience_years smallint NOT NULL,
+    status character varying(20) NOT NULL,
+    user_id bigint NOT NULL,
+    zone character varying(128) NOT NULL,
+    payload_capacity_kg numeric(10,2),
+    cargo_volume_m3 numeric(10,2),
+    cargo_length_cm numeric(10,2),
+    cargo_width_cm numeric(10,2),
+    cargo_height_cm numeric(10,2),
+    current_lat numeric(9,6),
+    current_lng numeric(9,6),
+    location_updated_at timestamp with time zone,
+    current_latitude numeric(9,6),
+    current_longitude numeric(9,6),
+    max_volume numeric(10,2),
+    max_weight numeric(10,2),
+    CONSTRAINT crm_courier_experience_years_check CHECK ((experience_years >= 0))
+);
+
+
+ALTER TABLE public.crm_courier OWNER TO artculinary_user;
+
+--
+-- Name: crm_courier_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_courier ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_courier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_courierassignment; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_courierassignment (
+    id bigint NOT NULL,
+    assigned_at timestamp with time zone NOT NULL,
+    courier_id bigint NOT NULL,
+    route_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_courierassignment OWNER TO artculinary_user;
+
+--
+-- Name: crm_courierassignment_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_courierassignment ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_courierassignment_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_delivery; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_delivery (
+    id bigint NOT NULL,
+    departure_time timestamp with time zone,
+    delivered_at timestamp with time zone,
+    address character varying(255) NOT NULL,
+    note text NOT NULL,
+    is_sent boolean NOT NULL,
+    courier_id bigint,
+    order_id bigint NOT NULL,
+    planned_at timestamp with time zone,
+    route_id bigint,
+    status character varying(20) NOT NULL,
+    cargo_weight_kg numeric(10,2),
+    cargo_volume_m3 numeric(10,2),
+    cargo_length_cm numeric(10,2),
+    cargo_width_cm numeric(10,2),
+    cargo_height_cm numeric(10,2),
+    delivery_date date
+);
+
+
+ALTER TABLE public.crm_delivery OWNER TO artculinary_user;
+
+--
+-- Name: crm_delivery_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_delivery ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_delivery_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_dish; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_dish (
+    id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    unit character varying(32) NOT NULL,
+    is_active boolean NOT NULL,
+    created_by_id bigint,
+    batch_multiple_qty numeric(10,3),
+    min_batch_qty numeric(10,3),
+    unit_weight_kg numeric(10,3),
+    default_price numeric(12,2),
+    base_uom character varying(8) NOT NULL,
+    quantity_scale smallint NOT NULL,
+    daily_capacity numeric(12,3),
+    CONSTRAINT crm_dish_quantity_scale_check CHECK ((quantity_scale >= 0))
+);
+
+
+ALTER TABLE public.crm_dish OWNER TO artculinary_user;
+
+--
+-- Name: crm_dish_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_dish ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_dish_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_dishequipmentrequirement; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_dishequipmentrequirement (
+    id bigint NOT NULL,
+    minutes_per_unit numeric(10,2) NOT NULL,
+    dish_id bigint NOT NULL,
+    equipment_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_dishequipmentrequirement OWNER TO artculinary_user;
+
+--
+-- Name: crm_dishequipmentrequirement_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_dishequipmentrequirement ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_dishequipmentrequirement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_equipment; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_equipment (
+    id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    capacity_per_hour numeric(10,2),
+    available_hours numeric(10,2)
+);
+
+
+ALTER TABLE public.crm_equipment OWNER TO artculinary_user;
+
+--
+-- Name: crm_equipment_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_equipment ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_equipment_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_equipmentreservation; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_equipmentreservation (
+    id bigint NOT NULL,
+    production_date date NOT NULL,
+    hours numeric(10,2) NOT NULL,
+    equipment_id bigint NOT NULL,
+    order_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_equipmentreservation OWNER TO artculinary_user;
+
+--
+-- Name: crm_equipmentreservation_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_equipmentreservation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_equipmentreservation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_ingredient; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_ingredient (
+    id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    is_active boolean NOT NULL
+);
+
+
+ALTER TABLE public.crm_ingredient OWNER TO artculinary_user;
+
+--
+-- Name: crm_ingredient_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_ingredient ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_ingredient_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_ingredientreservation; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_ingredientreservation (
+    id bigint NOT NULL,
+    production_date date NOT NULL,
+    quantity numeric(12,3) NOT NULL,
+    ingredient_id bigint NOT NULL,
+    order_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_ingredientreservation OWNER TO artculinary_user;
+
+--
+-- Name: crm_ingredientreservation_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.crm_ingredientreservation ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.crm_ingredientreservation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: crm_ingredientstock; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.crm_ingredientstock (
+    id bigint NOT NULL,
+    quantity numeric(12,3) NOT NULL,
+    ingredient_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.crm_ingredientstock OWNER TO artculinary_user;
+
+--
+-- Name: django_content_type; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.django_content_type (
+    id integer NOT NULL,
+    app_label character varying(100) NOT NULL,
+    model character varying(100) NOT NULL
+);
+
+
+ALTER TABLE public.django_content_type OWNER TO artculinary_user;
+
+--
+-- Name: django_content_type_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.django_content_type ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.django_content_type_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: django_migrations; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.django_migrations (
+    id bigint NOT NULL,
+    app character varying(255) NOT NULL,
+    name character varying(255) NOT NULL,
+    applied timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public.django_migrations OWNER TO artculinary_user;
+
+--
+-- Name: django_migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE public.django_migrations ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.django_migrations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: django_session; Type: TABLE; Schema: public; Owner: artculinary_user
+--
+
+CREATE TABLE public.django_session (
+    session_key character varying(40) NOT NULL,
+    session_data text NOT NULL,
+    expire_date timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public.django_session OWNER TO artculinary_user;
+
+--
+-- Data for Name: admin_panel_backup; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.admin_panel_backup (id, file_path, status, created_at, created_by_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: admin_panel_backupschedule; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.admin_panel_backupschedule (id, frequency, is_active, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: auth_group; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.auth_group (id, name) FROM stdin;
+\.
+
+
+--
+-- Data for Name: auth_group_permissions; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.auth_group_permissions (id, group_id, permission_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: auth_permission; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.auth_permission (id, name, content_type_id, codename) FROM stdin;
+1	Can add permission	3	add_permission
+2	Can change permission	3	change_permission
+3	Can delete permission	3	delete_permission
+4	Can view permission	3	view_permission
+5	Can add group	2	add_group
+6	Can change group	2	change_group
+7	Can delete group	2	delete_group
+8	Can view group	2	view_group
+9	Can add content type	1	add_contenttype
+10	Can change content type	1	change_contenttype
+11	Can delete content type	1	delete_contenttype
+12	Can view content type	1	view_contenttype
+13	Can add session	4	add_session
+14	Can change session	4	change_session
+15	Can delete session	4	delete_session
+16	Can view session	4	view_session
+\.
+
+
+--
+-- Data for Name: communications_directmessage; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.communications_directmessage (id, body, created_at, read_at, recipient_id, sender_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: communications_entitycomment; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.communications_entitycomment (id, object_id, body, created_at, updated_at, author_id, content_type_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_auditlog; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_auditlog (id, actor_role, object_type, object_id, field_name, old_value, new_value, reason, created_at, actor_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_client; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_client (id, name, client_type, inn, kpp, default_delivery_address, email, phone, status, responsible_manager_id, current_stage_id, created_at, daily_max_weight_kg, daily_min_qty, guaranteed_volume_kg) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_clientallowedtechcard; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_clientallowedtechcard (id, client_id, tech_card_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_clientcontact; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_clientcontact (id, full_name, "position", phone, email, is_primary, client_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_clientstagehistory; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_clientstagehistory (id, changed_at, comment, changed_by_id, client_id, stage_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_cooperationstage; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_cooperationstage (id, name, "order", is_active) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_courier; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_courier (id, transport_type, experience_years, status, user_id, zone, payload_capacity_kg, cargo_volume_m3, cargo_length_cm, cargo_width_cm, cargo_height_cm, current_lat, current_lng, location_updated_at, current_latitude, current_longitude, max_volume, max_weight) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_courierassignment; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_courierassignment (id, assigned_at, courier_id, route_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_delivery; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_delivery (id, departure_time, delivered_at, address, note, is_sent, courier_id, order_id, planned_at, route_id, status, cargo_weight_kg, cargo_volume_m3, cargo_length_cm, cargo_width_cm, cargo_height_cm, delivery_date) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_dish; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_dish (id, name, unit, is_active, created_by_id, batch_multiple_qty, min_batch_qty, unit_weight_kg, default_price, base_uom, quantity_scale, daily_capacity) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_dishequipmentrequirement; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_dishequipmentrequirement (id, minutes_per_unit, dish_id, equipment_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_equipment; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_equipment (id, name, capacity_per_hour, available_hours) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_equipmentreservation; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_equipmentreservation (id, production_date, hours, equipment_id, order_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_ingredient; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_ingredient (id, name, is_active) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_ingredientreservation; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_ingredientreservation (id, production_date, quantity, ingredient_id, order_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: crm_ingredientstock; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.crm_ingredientstock (id, quantity, ingredient_id) FROM stdin;
+\.
+
+
+--
+-- Data for Name: django_content_type; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.django_content_type (id, app_label, model) FROM stdin;
+1	contenttypes	contenttype
+2	auth	group
+3	auth	permission
+4	sessions	session
+\.
+
+
+--
+-- Data for Name: django_migrations; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.django_migrations (id, app, name, applied) FROM stdin;
+1	contenttypes	0001_initial	2026-05-14 11:15:01.076064+03
+2	contenttypes	0002_remove_content_type_name	2026-05-14 11:15:01.082265+03
+3	auth	0001_initial	2026-05-14 11:16:59.877426+03
+4	auth	0002_alter_permission_name_max_length	2026-05-14 11:17:00.634191+03
+5	auth	0003_alter_user_email_max_length	2026-05-14 11:17:00.637902+03
+6	auth	0004_alter_user_username_opts	2026-05-14 11:17:00.64154+03
+7	auth	0005_alter_user_last_login_null	2026-05-14 11:17:00.645297+03
+8	auth	0006_require_contenttypes_0002	2026-05-14 11:17:00.646287+03
+9	auth	0007_alter_validators_add_error_messages	2026-05-14 11:17:00.648971+03
+10	auth	0008_alter_user_username_max_length	2026-05-14 11:17:00.652116+03
+11	auth	0009_alter_user_last_name_max_length	2026-05-14 11:17:00.65521+03
+12	auth	0010_alter_group_name_max_length	2026-05-14 11:17:00.659044+03
+13	auth	0011_update_proxy_permissions	2026-05-14 11:17:00.662359+03
+14	auth	0012_alter_user_first_name_max_length	2026-05-14 11:17:00.665233+03
+15	sessions	0001_initial	2026-05-14 11:17:01.48278+03
+\.
+
+
+--
+-- Data for Name: django_session; Type: TABLE DATA; Schema: public; Owner: artculinary_user
+--
+
+COPY public.django_session (session_key, session_data, expire_date) FROM stdin;
+\.
+
+
+--
+-- Name: admin_panel_backup_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.admin_panel_backup_id_seq', 1, false);
+
+
+--
+-- Name: admin_panel_backupschedule_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.admin_panel_backupschedule_id_seq', 1, false);
+
+
+--
+-- Name: auth_group_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.auth_group_id_seq', 1, false);
+
+
+--
+-- Name: auth_group_permissions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.auth_group_permissions_id_seq', 1, false);
+
+
+--
+-- Name: auth_permission_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.auth_permission_id_seq', 16, true);
+
+
+--
+-- Name: communications_directmessage_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.communications_directmessage_id_seq', 1, false);
+
+
+--
+-- Name: communications_entitycomment_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.communications_entitycomment_id_seq', 1, false);
+
+
+--
+-- Name: crm_auditlog_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_auditlog_id_seq', 1, false);
+
+
+--
+-- Name: crm_client_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_client_id_seq', 1, false);
+
+
+--
+-- Name: crm_clientallowedtechcard_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_clientallowedtechcard_id_seq', 1, false);
+
+
+--
+-- Name: crm_clientcontact_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_clientcontact_id_seq', 1, false);
+
+
+--
+-- Name: crm_clientstagehistory_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_clientstagehistory_id_seq', 1, false);
+
+
+--
+-- Name: crm_cooperationstage_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_cooperationstage_id_seq', 1, false);
+
+
+--
+-- Name: crm_courier_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_courier_id_seq', 1, false);
+
+
+--
+-- Name: crm_courierassignment_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_courierassignment_id_seq', 1, false);
+
+
+--
+-- Name: crm_delivery_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_delivery_id_seq', 1, false);
+
+
+--
+-- Name: crm_dish_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_dish_id_seq', 1, false);
+
+
+--
+-- Name: crm_dishequipmentrequirement_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_dishequipmentrequirement_id_seq', 1, false);
+
+
+--
+-- Name: crm_equipment_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_equipment_id_seq', 1, false);
+
+
+--
+-- Name: crm_equipmentreservation_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_equipmentreservation_id_seq', 1, false);
+
+
+--
+-- Name: crm_ingredient_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_ingredient_id_seq', 1, false);
+
+
+--
+-- Name: crm_ingredientreservation_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.crm_ingredientreservation_id_seq', 1, false);
+
+
+--
+-- Name: django_content_type_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.django_content_type_id_seq', 4, true);
+
+
+--
+-- Name: django_migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: artculinary_user
+--
+
+SELECT pg_catalog.setval('public.django_migrations_id_seq', 15, true);
+
+
+--
+-- Name: django_content_type django_content_type_app_label_model_76bd3d3b_uniq; Type: CONSTRAINT; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE ONLY public.django_content_type
+    ADD CONSTRAINT django_content_type_app_label_model_76bd3d3b_uniq UNIQUE (app_label, model);
+
+
+--
+-- Name: django_content_type django_content_type_pkey; Type: CONSTRAINT; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE ONLY public.django_content_type
+    ADD CONSTRAINT django_content_type_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: django_migrations django_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE ONLY public.django_migrations
+    ADD CONSTRAINT django_migrations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: django_session django_session_pkey; Type: CONSTRAINT; Schema: public; Owner: artculinary_user
+--
+
+ALTER TABLE ONLY public.django_session
+    ADD CONSTRAINT django_session_pkey PRIMARY KEY (session_key);
+
+
+--
+-- Name: django_session_expire_date_a5c62663; Type: INDEX; Schema: public; Owner: artculinary_user
+--
+
+CREATE INDEX django_session_expire_date_a5c62663 ON public.django_session USING btree (expire_date);
+
+
+--
+-- Name: django_session_session_key_c0390e0f_like; Type: INDEX; Schema: public; Owner: artculinary_user
+--
+
+CREATE INDEX django_session_session_key_c0390e0f_like ON public.django_session USING btree (session_key varchar_pattern_ops);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict FneQlkpH4XjRj9cd8RUWOFlPCONy6aJFJS0QTvkm3eLmwFFvmcSjpeluixVaJO0
+

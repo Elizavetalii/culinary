@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Чат{% endblock %}
+{% block topbar_title %}Чат{% endblock %}
+{% block breadcrumbs %}
+  <a href="/dashboard/">Главная</a> / Чат
+{% endblock %}
+
+{% block content %}
+  <div class="section-header">
+    <h4 class="mb-0">Внутренние диалоги</h4>
+    {% if unread_count %}
+      <span class="badge-soft warn">{{ unread_count }} непрочитано</span>
+    {% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <h6>Последние диалоги</h6>
+        <div class="list-group list-group-flush">
+          {% for row in dialogs %}
+            <a class="list-group-item list-group-item-action bg-transparent d-flex justify-content-between gap-3" href="/chat/{{ row.user.id }}/">
+              <span>
+                <span class="fw-semibold">{{ row.user.full_name|default:row.user.username }}</span>
+                <span class="d-block small text-muted">{{ row.last_message.body|truncatechars:90 }}</span>
+              </span>
+              {% if row.unread %}
+                <span class="badge-soft primary">{{ row.unread }}</span>
+              {% endif %}
+            </a>
+          {% empty %}
+            <div class="text-muted">Диалогов пока нет.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <h6>Начать диалог</h6>
+        <div class="list-group list-group-flush">
+          {% for user in users %}
+            <a class="list-group-item list-group-item-action bg-transparent" href="/chat/{{ user.id }}/">
+              {{ user.full_name|default:user.username }}
+            </a>
+          {% empty %}
+            <div class="text-muted">Нет доступных сотрудников.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

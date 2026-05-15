@@ -91,6 +91,9 @@
       <div class="card">
         <h6>Карта активных маршрутов</h6>
         <div id="logistic-map" style="height: 360px;"></div>
+        <div id="logistic-map-fallback" class="alert alert-warning mt-2 py-2 small" style="display:none">
+          Карту не удалось загрузить. Можно открыть маршрут во внешних картах.
+        </div>
         <div class="mt-2">
           <a id="open-in-maps" class="link-muted" href="#" target="_blank" rel="noopener">Открыть в Google Maps</a>
         </div>
@@ -130,11 +133,16 @@
   {{ routes_payload|json_script:"routes-data" }}
   <script>
     async function geocodeAddress(address) {
-      const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
-      const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
-      const data = await res.json();
-      if (!data.length) return null;
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      try {
+        const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
+        const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.length) return null;
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      } catch (error) {
+        return null;
+      }
     }
 
     function buildGoogleMapsLink(points) {
@@ -152,6 +160,13 @@
       const data = JSON.parse(document.getElementById("routes-data").textContent || "[]");
       const mapEl = document.getElementById("logistic-map");
       if (!mapEl) return;
+      const fallback = document.getElementById("logistic-map-fallback");
+      const link = document.getElementById("open-in-maps");
+      if (data[0] && link) link.href = buildGoogleMapsLink(data[0].stops || []);
+      if (!window.L) {
+        if (fallback) fallback.style.display = "block";
+        return;
+      }
       const map = L.map(mapEl);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -181,7 +196,7 @@
         if (points.length) {
           const latLngs = points.map((p) => [p.lat, p.lng]);
           polyline = L.polyline(latLngs, { color: "#3b82f6" }).addTo(map);
-          markers = points.map((p) => L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.address || "Точка"));
+          markers = points.map((p) => L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.kind === "depot" ? "Склад: " + (p.address || "") : (p.address || "Точка")));
           map.fitBounds(latLngs, { padding: [30, 30] });
         } else {
           map.setView([55.751244, 37.618423], 10);
@@ -189,6 +204,7 @@
 
         const link = document.getElementById("open-in-maps");
         if (link) link.href = buildGoogleMapsLink(route.stops || []);
+        if (!points.length && fallback) fallback.style.display = "block";
       }
 
       const firstRoute = data[0];

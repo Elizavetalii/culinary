@@ -3,6 +3,15 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+ENV_FILE = BASE_DIR / '.env'
+if ENV_FILE.exists():
+    for raw_line in ENV_FILE.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'insecure-secret-key-change-me')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
@@ -25,6 +34,7 @@ INSTALLED_APPS = [
     'reports',
     'dashboard',
     'admin_panel',
+    'communications',
 ]
 
 MIDDLEWARE = [
@@ -52,6 +62,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'accounts.context_processors.role_flags',
+                'communications.context_processors.communications_unread',
             ],
         },
     },
@@ -62,12 +73,12 @@ ASGI_APPLICATION = 'factory_crm.asgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.sqlite3'),
-        'NAME': os.environ.get('DB_NAME', BASE_DIR / 'db.sqlite3'),
-        'USER': os.environ.get('DB_USER', ''),
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'art_culinary_crm'),
+        'USER': os.environ.get('DB_USER', 'artculinary_user'),
         'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-        'HOST': os.environ.get('DB_HOST', ''),
-        'PORT': os.environ.get('DB_PORT', ''),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
         'ATOMIC_REQUESTS': True,
     }
 }
@@ -100,13 +111,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
-LOGISTICS_DEPOT_ADDRESS = os.environ.get('LOGISTICS_DEPOT_ADDRESS', 'Химки')
+LOGISTICS_DEPOT_ADDRESS = os.environ.get('LOGISTICS_DEPOT_ADDRESS', 'Производство Art Culinary, Химки')
 LOGISTICS_DEPOT_LAT = float(os.environ.get('LOGISTICS_DEPOT_LAT', '55.886'))
 LOGISTICS_DEPOT_LNG = float(os.environ.get('LOGISTICS_DEPOT_LNG', '37.442'))
 LOGISTICS_AVG_SPEED_KMH = int(os.environ.get('LOGISTICS_AVG_SPEED_KMH', '35'))
 LOGISTICS_RETURN_TO_DEPOT = os.environ.get('LOGISTICS_RETURN_TO_DEPOT', 'true').lower() == 'true'
 LOGISTICS_SERVICE_TIME_MINUTES = int(os.environ.get('LOGISTICS_SERVICE_TIME_MINUTES', '15'))
 LOGISTICS_ALLOWED_PROOF_EXT = ['.pdf', '.jpg', '.jpeg', '.png']
+LOGISTICS_MAX_PROOF_SIZE_MB = int(os.environ.get('LOGISTICS_MAX_PROOF_SIZE_MB', '10'))
 
 ORDER_CUTOFF_TIME = "16:00"
 ORDER_MORNING_CUTOFF_TIME = "10:00"

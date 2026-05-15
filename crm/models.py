@@ -571,20 +571,6 @@ class Route(models.Model):
         return f"Маршрут {self.planned_date}"
 
 
-class CourierAssignment(models.Model):
-    courier = models.ForeignKey(Courier, on_delete=models.CASCADE, related_name='assignments')
-    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name='assignments')
-    assigned_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        unique_together = ('courier', 'route')
-        verbose_name = 'Назначение курьера'
-        verbose_name_plural = 'Назначения курьеров'
-
-    def __str__(self):
-        return f"{self.courier} на {self.route}"
-
-
 class RouteStop(models.Model):
     class StopStatus(models.TextChoices):
         DRAFT = "Черновик", "Черновик"
@@ -646,6 +632,20 @@ class RouteStop(models.Model):
         super().save(*args, **kwargs)
 
 
+
+class CourierAssignment(models.Model):
+    courier = models.ForeignKey(Courier, on_delete=models.CASCADE, related_name='assignments')
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name='assignments')
+    assigned_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = ('courier', 'route')
+        verbose_name = 'Назначение курьера'
+        verbose_name_plural = 'Назначения курьеров'
+
+    def __str__(self):
+        return f"{self.courier} на {self.route}"
+    
 class AuditLog(models.Model):
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_actions")
     actor_role = models.CharField("Роль", max_length=64, blank=True)

@@ -7,6 +7,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import HttpResponse, HttpResponseBadRequest
 from accounts.utils import role_required
+from communications.services import entity_comments_context
 from crm.models import (
     Delivery,
     Route,
@@ -291,18 +292,16 @@ def delivery_card(request, pk):
         "origin": origin,
         "destination": destination,
     }
-    return render(
-        request,
-        "logistics/delivery_card.html",
-        {
-            "form": form,
-            "delivery": obj,
-            "title": "Карточка доставки",
-            "suitable_couriers": suitable_couriers,
-            "delivery_map_payload": delivery_map_payload,
-            "map_prefs": profile,
-        },
-    )
+    context = {
+        "form": form,
+        "delivery": obj,
+        "title": "Карточка доставки",
+        "suitable_couriers": suitable_couriers,
+        "delivery_map_payload": delivery_map_payload,
+        "map_prefs": profile,
+    }
+    context.update(entity_comments_context(obj))
+    return render(request, "logistics/delivery_card.html", context)
 
 @role_required("Логист")
 def couriers_list(request):
@@ -465,7 +464,17 @@ def route_detail(request, pk):
             messages.success(request, "Маршрут опубликован.")
             return redirect(f"/logistics/routes/{route.id}/")
 
-    stop_points = []
+    stop_points = [
+        {
+            "id": None,
+            "sequence": 0,
+            "status": "Склад",
+            "address": getattr(settings, "LOGISTICS_DEPOT_ADDRESS", "Склад"),
+            "lat": float(getattr(settings, "LOGISTICS_DEPOT_LAT", 55.886)),
+            "lng": float(getattr(settings, "LOGISTICS_DEPOT_LNG", 37.442)),
+            "kind": "depot",
+        }
+    ]
     for s in stops:
         address = s.delivery.address or s.delivery.order.address
         stop_points.append(
@@ -476,6 +485,7 @@ def route_detail(request, pk):
                 "address": address,
                 "lat": float(s.latitude) if s.latitude is not None else None,
                 "lng": float(s.longitude) if s.longitude is not None else None,
+                "kind": "delivery",
             }
         )
     map_payload = {"route_id": route.id, "stops": stop_points}
@@ -487,26 +497,24 @@ def route_detail(request, pk):
         route.save(update_fields=["status"])
         _log_action(request.user, route, "status", old_status, route.status, "Авто-переход при валидности")
 
-    return render(
-        request,
-        "logistics/route_detail.html",
-        {
-            "route": route,
-            "stops": stops,
-            "assignments": assignments,
-            "stop_form": stop_form,
-            "assign_form": assign_form,
-            "map_payload": map_payload,
-            "map_prefs": profile,
-            "total_points": metrics["total_stops"],
-            "total_weight": metrics["total_weight"],
-            "total_volume": metrics["total_volume"],
-            "route_distance_km": metrics["distance_km"],
-            "route_duration_minutes": metrics["duration_minutes"],
-            "route_errors": errors,
-            "route_warnings": warnings,
-        },
-    )
+    context = {
+        "route": route,
+        "stops": stops,
+        "assignments": assignments,
+        "stop_form": stop_form,
+        "assign_form": assign_form,
+        "map_payload": map_payload,
+        "map_prefs": profile,
+        "total_points": metrics["total_stops"],
+        "total_weight": metrics["total_weight"],
+        "total_volume": metrics["total_volume"],
+        "route_distance_km": metrics["distance_km"],
+        "route_duration_minutes": metrics["duration_minutes"],
+        "route_errors": errors,
+        "route_warnings": warnings,
+    }
+    context.update(entity_comments_context(route))
+    return render(request, "logistics/route_detail.html", context)
 
 # Create your views here.
 
@@ -619,6 +627,9 @@ def courier_upload_proof(request, pk):
             allowed = getattr(settings, "LOGISTICS_ALLOWED_PROOF_EXT", [".pdf", ".jpg", ".jpeg", ".png"])
             if ext not in allowed:
                 return HttpResponseBadRequest("Недопустимый формат файла.")
+            max_size_mb = getattr(settings, "LOGISTICS_MAX_PROOF_SIZE_MB", 10)
+            if uploaded.size > max_size_mb * 1024 * 1024:
+                return HttpResponseBadRequest(f"Файл слишком большой. Максимальный размер — {max_size_mb} МБ.")
         else:
             return HttpResponseBadRequest("Документ доставки обязателен.")
         stop = form.save(commit=False)

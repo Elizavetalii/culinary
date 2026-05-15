@@ -76,6 +76,9 @@
       <div class="card mt-3">
         <h6>Маршрут и карта</h6>
         <div id="delivery-map" style="height: 320px;"></div>
+        <div id="delivery-map-fallback" class="alert alert-warning mt-2 py-2 small" style="display:none">
+          Карту не удалось загрузить. Можно открыть маршрут во внешних картах.
+        </div>
         <div class="d-flex gap-3 mt-2 small text-muted">
           <div>Расстояние: <span id="route-distance">—</span></div>
           <div>Время: <span id="route-duration">—</span></div>
@@ -88,14 +91,21 @@
     </div>
   </div>
 
+  {% include "communications/entity_comments.html" %}
+
   {{ delivery_map_payload|json_script:"delivery-map-data" }}
   <script>
     async function geocodeAddress(address) {
-      const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
-      const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
-      const data = await res.json();
-      if (!data.length) return null;
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      try {
+        const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
+        const res = await fetch(url, { headers: { "Accept-Language": "ru" } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.length) return null;
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      } catch (error) {
+        return null;
+      }
     }
 
     function buildGoogleMapsLink(origin, destination) {
@@ -109,6 +119,13 @@
       const payload = JSON.parse(document.getElementById("delivery-map-data").textContent || "{}");
       const mapEl = document.getElementById("delivery-map");
       if (!mapEl) return;
+      const fallback = document.getElementById("delivery-map-fallback");
+      const link = document.getElementById("open-delivery-maps");
+      if (link) link.href = buildGoogleMapsLink(payload.origin, payload.destination);
+      if (!window.L) {
+        if (fallback) fallback.style.display = "block";
+        return;
+      }
       const map = L.map(mapEl);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -117,6 +134,7 @@
 
       if (!payload.origin || !payload.destination) {
         map.setView([55.751244, 37.618423], 10);
+        if (fallback) fallback.style.display = "block";
         return;
       }
 
@@ -133,9 +151,9 @@
         map.fitBounds(latLngs, { padding: [30, 30] });
       } else {
         map.setView([55.751244, 37.618423], 10);
+        if (fallback) fallback.style.display = "block";
       }
 
-      const link = document.getElementById("open-delivery-maps");
       if (link) link.href = buildGoogleMapsLink(payload.origin, payload.destination);
     }
   </script>

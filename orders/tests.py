@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 
 from crm.models import Client, Dish, Order, OrderItem, OrderStatus, User
 from orders.forms import OrderForm, OrderItemForm
@@ -18,13 +19,14 @@ class OrderFormTests(TestCase):
         self.client_obj = Client.objects.create(name="Test Client")
 
     def test_order_number_not_required(self):
+        future_day = date.today() + timedelta(days=7)
         form = OrderForm(
             data={
                 "order_number": "",
                 "client": self.client_obj.id,
                 "status": OrderStatus.DRAFT,
                 "address": "Test address",
-                "delivery_date": "2026-02-20",
+                "delivery_date": future_day.isoformat(),
                 "delivery_time": "10:00",
                 "delivery_type": "Разовая",
                 "comments": "",
@@ -89,7 +91,7 @@ class ReservedQtyTests(TestCase):
         self.dish = Dish.objects.create(name="Котлета", unit="шт", daily_capacity=100, default_price=50)
 
     def test_reserved_qty_excludes_statuses_and_order(self):
-        day = date(2026, 2, 20)
+        day = timezone.localdate() + timedelta(days=7)
         order1 = Order.objects.create(
             order_number="ORD-001",
             client=self.client_obj,
@@ -119,3 +121,19 @@ class ReservedQtyTests(TestCase):
 
         reserved_excluding = _get_reserved_qty_map(day, exclude_order_id=order3.id)
         self.assertEqual(reserved_excluding.get(self.dish.id), 5)
+
+    def test_reserved_qty_uses_production_date_when_it_differs_from_delivery_date(self):
+        production_day = timezone.localdate() + timedelta(days=7)
+        delivery_day = production_day + timedelta(days=1)
+        order = Order.objects.create(
+            order_number="ORD-004",
+            client=self.client_obj,
+            status=OrderStatus.CONFIRMED,
+            delivery_date=delivery_day,
+            production_date=production_day,
+        )
+        OrderItem.objects.create(order=order, dish=self.dish, quantity=6, unit_price=50)
+
+        reserved = _get_reserved_qty_map(production_day)
+
+        self.assertEqual(reserved.get(self.dish.id), 6)

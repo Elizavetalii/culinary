@@ -3,9 +3,10 @@ from django.contrib import messages
 from accounts.utils import roles_required, role_required
 from django.utils import timezone
 from django.conf import settings
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.db import transaction
 from django.http import JsonResponse, HttpResponseBadRequest
+from communications.services import entity_comments_context
 from crm.models import (
     Order,
     OrderStatus,
@@ -97,9 +98,11 @@ def _get_reserved_qty_map(production_date, exclude_order_id=None):
     if not production_date:
         return {}
     qs = OrderItem.objects.filter(
-        order__delivery_date=production_date,
         order__status__in=RESERVED_STATUSES,
         dish__isnull=False,
+    ).filter(
+        Q(order__production_date=production_date)
+        | Q(order__production_date__isnull=True, order__delivery_date=production_date)
     )
     if exclude_order_id:
         qs = qs.exclude(order_id=exclude_order_id)
@@ -108,7 +111,8 @@ def _get_reserved_qty_map(production_date, exclude_order_id=None):
 
 
 def _validate_dish_capacity(order, items):
-    reserved_map = _get_reserved_qty_map(order.delivery_date, exclude_order_id=order.id)
+    production_date = order.production_date or order.delivery_date
+    reserved_map = _get_reserved_qty_map(production_date, exclude_order_id=order.id)
     requested_map = {}
     for item in items:
         if not item.dish_id:
@@ -303,88 +307,121 @@ def order_list(request):
     )
 
 
+def _order_form_context(form, formset, title, **extra):
+    context = {
+        "form": form,
+        "formset": formset,
+        "title": title,
+        "clients": Client.objects.all(),
+        "dish_prices": {
+            d.id: float(d.default_price)
+            for d in Dish.objects.filter(is_active=True, default_price__isnull=False)
+        },
+    }
+    context.update(extra)
+    if form.instance and form.instance.pk:
+        context.update(entity_comments_context(form.instance))
+    return context
+
+
+def _active_formset_items(formset):
+    items = []
+    for item_form in formset.forms:
+        if not item_form.cleaned_data:
+            continue
+        if item_form.cleaned_data.get("DELETE"):
+            continue
+        item = item_form.save(commit=False)
+        if item.dish:
+            items.append(item)
+    return items
+
+
+def _deleted_formset_items(formset):
+    deleted = []
+    for item_form in formset.forms:
+        if item_form.cleaned_data.get("DELETE") and item_form.instance.pk:
+            deleted.append(item_form.instance)
+    return deleted
+
+
+def _prepare_order_items(order, items):
+    errors = []
+    for item in items:
+        item.order = order
+        try:
+            _attach_tech_card(order, item)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if item.unit_price is None and item.dish and item.dish.default_price is not None:
+            item.unit_price = item.dish.default_price
+        if item.unit_price is None:
+            errors.append(f"Цена не задана для блюда «{item.dish}».")
+    return errors
+
+
+def _save_order_with_items(request, form, formset, title, success_message, redirect_url, existing_order=None):
+    order = form.save(commit=False)
+    if existing_order is None and request.user.roles.filter(name__iexact="Менеджер").exists():
+        order.manager = request.user
+    action = request.POST.get("action", "save")
+    order.status = OrderStatus.DRAFT if action == "draft" else OrderStatus.REVIEW
+    _apply_production_fields(order)
+    _ensure_order_number(order)
+
+    items = _active_formset_items(formset)
+    if not items:
+        messages.error(request, "Добавьте хотя бы одну позицию заказа.")
+        return render(request, "orders/form.html", _order_form_context(form, formset, title))
+
+    item_errors = _prepare_order_items(order, items)
+    if item_errors:
+        for err in item_errors:
+            messages.error(request, err)
+        return render(request, "orders/form.html", _order_form_context(form, formset, title))
+
+    errors, warnings, info = _validate_order_capacity(order, items)
+    capacity_errors = _validate_dish_capacity(order, items)
+    errors.extend(capacity_errors)
+    if errors:
+        for err in errors:
+            messages.error(request, err)
+        return render(
+            request,
+            "orders/form.html",
+            _order_form_context(form, formset, title, warnings=warnings, info=info),
+        )
+
+    with transaction.atomic():
+        order.save()
+        for deleted in _deleted_formset_items(formset):
+            deleted.delete()
+        for item in items:
+            item.order = order
+            item.save()
+        order.recalc_total()
+        _reserve_resources(order)
+        if order.status in [OrderStatus.CONFIRMED, OrderStatus.READY_TO_SHIP, OrderStatus.SHIPPED] and not order.deliveries.exists():
+            Delivery.objects.create(
+                order=order,
+                address=order.address,
+                status=Delivery.DeliveryStatus.UNASSIGNED,
+            )
+    messages.success(request, success_message)
+    return redirect(redirect_url)
+
+
 @roles_required(["Менеджер", "Администратор системы"])
 def order_create(request):
     form = OrderForm(request.POST or None)
     formset = OrderItemFormSet(request.POST or None, queryset=OrderItem.objects.none())
-    dish_prices = {d.id: float(d.default_price) for d in Dish.objects.filter(is_active=True, default_price__isnull=False)}
     if request.method == "POST" and form.is_valid() and formset.is_valid():
-        with transaction.atomic():
-            obj = form.save(commit=False)
-            if request.user.roles.filter(name__iexact="Менеджер").exists():
-                obj.manager = request.user
-            action = request.POST.get("action", "save")
-            obj.status = OrderStatus.DRAFT if action == "draft" else OrderStatus.REVIEW
-            _apply_production_fields(obj)
-            _ensure_order_number(obj)
-            obj.save()
-            items = [i for i in formset.save(commit=False) if i.dish]
-            if not items:
-                messages.error(request, "Добавьте хотя бы одну позицию заказа.")
-                return render(
-                request,
-                "orders/form.html",
-                {"form": form, "formset": formset, "title": "Новый заказ", "dish_prices": dish_prices},
-            )
-        errors, warnings, info = _validate_order_capacity(obj, items)
-        if errors:
-            clients = Client.objects.all()
-            for err in errors:
-                messages.error(request, err)
-            return render(
-                request,
-                "orders/form.html",
-                {"form": form, "formset": formset, "title": "Новый заказ", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-            )
-            capacity_errors = _validate_dish_capacity(obj, items)
-            if capacity_errors:
-                clients = Client.objects.all()
-                for err in capacity_errors:
-                    messages.error(request, err)
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Новый заказ", "warnings": warnings, "info": info, "clients": clients},
-                )
-            for item in items:
-                item.order = obj
-                try:
-                    _attach_tech_card(obj, item)
-                except ValueError as exc:
-                    messages.error(request, str(exc))
-                    clients = Client.objects.all()
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Новый заказ", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-                )
-            if item.unit_price is None and item.dish and item.dish.default_price is not None:
-                item.unit_price = item.dish.default_price
-            if item.unit_price is None:
-                messages.error(request, f"Цена не задана для блюда «{item.dish}».")
-                clients = Client.objects.all()
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Новый заказ", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-                )
-                item.save()
-            for deleted in formset.deleted_objects:
-                deleted.delete()
-            _reserve_resources(obj)
-            if obj.status in [OrderStatus.CONFIRMED, OrderStatus.READY_TO_SHIP, OrderStatus.SHIPPED] and not obj.deliveries.exists():
-                Delivery.objects.create(
-                    order=obj,
-                    address=obj.address,
-                    status=Delivery.DeliveryStatus.UNASSIGNED,
-                )
-            messages.success(request, "Заказ создан.")
-            return redirect("/orders/")
-    clients = Client.objects.all()
+        return _save_order_with_items(request, form, formset, "Новый заказ", "Заказ создан.", "/orders/")
     return render(
         request,
         "orders/form.html",
-        {"form": form, "formset": formset, "title": "Новый заказ", "clients": clients, "dish_prices": dish_prices},
+        _order_form_context(form, formset, "Новый заказ"),
     )
 
 
@@ -393,82 +430,20 @@ def order_edit(request, pk):
     obj = get_object_or_404(Order, pk=pk)
     form = OrderForm(request.POST or None, instance=obj)
     formset = OrderItemFormSet(request.POST or None, queryset=obj.items.all())
-    dish_prices = {d.id: float(d.default_price) for d in Dish.objects.filter(is_active=True, default_price__isnull=False)}
     if request.method == "POST" and form.is_valid() and formset.is_valid():
-        with transaction.atomic():
-            order = form.save()
-            action = request.POST.get("action", "save")
-            order.status = OrderStatus.DRAFT if action == "draft" else OrderStatus.REVIEW
-            _apply_production_fields(order)
-            _ensure_order_number(order)
-            order.save()
-            items = [i for i in formset.save(commit=False) if i.dish]
-            if not items:
-                messages.error(request, "Добавьте хотя бы одну позицию заказа.")
-            return render(
-                request,
-                "orders/form.html",
-                {"form": form, "formset": formset, "title": "Редактирование заказа", "dish_prices": dish_prices},
-            )
-        errors, warnings, info = _validate_order_capacity(order, items)
-        if errors:
-            clients = Client.objects.all()
-            for err in errors:
-                messages.error(request, err)
-            return render(
-                request,
-                "orders/form.html",
-                {"form": form, "formset": formset, "title": "Редактирование заказа", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-            )
-            capacity_errors = _validate_dish_capacity(order, items)
-            if capacity_errors:
-                clients = Client.objects.all()
-                for err in capacity_errors:
-                    messages.error(request, err)
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Редактирование заказа", "warnings": warnings, "info": info, "clients": clients},
-                )
-            for item in items:
-                item.order = order
-                try:
-                    _attach_tech_card(order, item)
-                except ValueError as exc:
-                    messages.error(request, str(exc))
-                    clients = Client.objects.all()
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Редактирование заказа", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-                )
-            if item.unit_price is None and item.dish and item.dish.default_price is not None:
-                item.unit_price = item.dish.default_price
-            if item.unit_price is None:
-                messages.error(request, f"Цена не задана для блюда «{item.dish}».")
-                clients = Client.objects.all()
-                return render(
-                    request,
-                    "orders/form.html",
-                    {"form": form, "formset": formset, "title": "Редактирование заказа", "warnings": warnings, "info": info, "clients": clients, "dish_prices": dish_prices},
-                )
-                item.save()
-            for deleted in formset.deleted_objects:
-                deleted.delete()
-            _reserve_resources(order)
-            if order.status in [OrderStatus.CONFIRMED, OrderStatus.READY_TO_SHIP, OrderStatus.SHIPPED] and not order.deliveries.exists():
-                Delivery.objects.create(
-                    order=order,
-                    address=order.address,
-                    status=Delivery.DeliveryStatus.UNASSIGNED,
-                )
-            messages.success(request, "Заказ обновлён.")
-            return redirect("/orders/")
-    clients = Client.objects.all()
+        return _save_order_with_items(
+            request,
+            form,
+            formset,
+            "Редактирование заказа",
+            "Заказ обновлён.",
+            "/orders/",
+            existing_order=obj,
+        )
     return render(
         request,
         "orders/form.html",
-        {"form": form, "formset": formset, "title": "Редактирование заказа", "clients": clients, "dish_prices": dish_prices},
+        _order_form_context(form, formset, "Редактирование заказа"),
     )
 
 
@@ -650,15 +625,13 @@ def picker_order_detail(request, pk):
         else:
             messages.error(request, "Проверьте данные: есть ошибки в позициях.")
 
-    return render(
-        request,
-        "orders/picker_detail.html",
-        {
-            "order": order,
-            "formset": formset,
-            "session_form": session_form,
-            "session": session,
-        },
-    )
+    context = {
+        "order": order,
+        "formset": formset,
+        "session_form": session_form,
+        "session": session,
+    }
+    context.update(entity_comments_context(order))
+    return render(request, "orders/picker_detail.html", context)
 
 # Create your views here.

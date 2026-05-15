@@ -1,0 +1,210 @@
+<mxfile host="app.diagrams.net" modified="2026-02-23T11:10:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="structural-scheme" name="Структурная схема программы">
+    <mxGraphModel dx="2400" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3200" pageHeight="2000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="3200" height="2000" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="title" value="Структурная схема программы Art Culinary CRM" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontStyle=1;fontSize=26;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="760" y="20" width="1680" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Layers -->
+        <mxCell id="layer_ui" value="Уровень представления (Presentation Layer)" style="swimlane;html=1;rounded=0;startSize=30;horizontal=1;strokeWidth=2;strokeColor=#000000;fillColor=#f7f7f7;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="90" width="3080" height="230" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="layer_app" value="Прикладной уровень (Application Layer, Django)" style="swimlane;html=1;rounded=0;startSize=30;horizontal=1;strokeWidth=2;strokeColor=#000000;fillColor=#f7f7f7;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="350" width="3080" height="980" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="layer_inf" value="Инфраструктурный уровень (Infrastructure Layer)" style="swimlane;html=1;rounded=0;startSize=30;horizontal=1;strokeWidth=2;strokeColor=#000000;fillColor=#f7f7f7;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1360" width="3080" height="560" as="geometry"/>
+        </mxCell>
+
+        <!-- UI -->
+        <mxCell id="ui_roles" value="Пользователи&#xa;Менеджер&#xa;Логист&#xa;Курьер&#xa;Сборщик&#xa;Администратор" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="145" width="260" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_browser" value="Браузер&#xa;HTML/CSS/JS&#xa;Формы, таблицы, уведомления" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="410" y="145" width="310" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_templates" value="Templates&#xa;base.html&#xa;orders/*.html&#xa;clients/*.html&#xa;logistics/*.html" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="770" y="145" width="290" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_routes" value="URL Router&#xa;factory_crm/urls.py&#xa;app urls.py" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="145" width="260" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- App sublayers -->
+        <mxCell id="app_controllers" value="Контроллеры / Views" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#efefef;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="420" width="980" height="260" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="v_accounts" value="accounts/views.py&#xa;login/logout&#xa;password reset" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="120" y="470" width="180" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="v_clients" value="clients/views.py&#xa;CRUD клиентов&#xa;контакты, этапы" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="320" y="470" width="180" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="v_orders" value="orders/views.py&#xa;заказы, позиции&#xa;availability API&#xa;массовые операции" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="520" y="470" width="180" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="v_logistics" value="logistics/views.py&#xa;маршруты, доставки&#xa;остановки, proof" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="720" y="470" width="180" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="v_reports" value="reports/views.py&#xa;отчеты и валидация" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="920" y="470" width="140" height="180" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="app_forms" value="Формы / Валидация" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#efefef;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="420" width="620" height="260" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="f_orders" value="orders/forms.py&#xa;валидация даты&#xa;валидация полей заказа" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="470" width="190" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_clients" value="clients/forms.py&#xa;валидация клиента&#xa;контактов" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="470" width="180" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_logistics" value="logistics/forms.py&#xa;валидация маршрутов&#xa;и доставок" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1550" y="470" width="170" height="180" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="app_services" value="Бизнес-логика / Сервисы" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#efefef;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="730" width="1640" height="270" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s_order" value="Order domain&#xa;генерация номера&#xa;пересчет суммы&#xa;проверка доступности" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="120" y="790" width="240" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_reserv" value="Reservations&#xa;IngredientReservation&#xa;EquipmentReservation&#xa;ProductionReservation" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="380" y="790" width="240" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_delivery" value="Delivery/Route logic&#xa;назначения, стопы,&#xa;статусы доставки" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="640" y="790" width="240" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_rbac" value="RBAC&#xa;права ролей&#xa;ограничение действий" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="900" y="790" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_audit" value="Audit&#xa;журнал изменений&#xa;действий пользователей" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="790" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_notify" value="Notifications&#xa;messages/toasts&#xa;email уведомления" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="790" width="220" height="180" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="app_data" value="Модель данных / ORM" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#efefef;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="420" width="1320" height="580" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="m_users" value="Users &amp; Roles&#xa;User, Role, UserRole&#xa;LogisticianProfile" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="470" width="220" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_clients" value="Clients&#xa;Client, ClientContact&#xa;CooperationStage&#xa;Interaction" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2050" y="470" width="220" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_catalog" value="Catalog&#xa;Dish, TechCard&#xa;TechCardComponent&#xa;Ingredient, IngredientStock" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2290" y="470" width="240" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_orders" value="Orders&#xa;Order, OrderItem&#xa;PickingSession&#xa;reservations" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2550" y="470" width="220" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_logistics" value="Logistics&#xa;Courier, Delivery&#xa;Route, RouteStop&#xa;CourierAssignment" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2790" y="470" width="280" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="m_reports" value="Reports&#xa;Report&#xa;status/validation&#xa;file" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="660" width="220" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_audit" value="Audit&#xa;AuditLog&#xa;actor/object/field&#xa;old/new values" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2050" y="660" width="220" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="m_admin" value="Admin entities&#xa;Backup&#xa;BackupSchedule" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="2290" y="660" width="240" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- Infrastructure blocks -->
+        <mxCell id="inf_db" value="СУБД&#xa;PostgreSQL (prod)&#xa;SQLite (dev)&#xa;схема, индексы, FK/UK" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="1450" width="340" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_media" value="Файловое хранилище&#xa;media/&#xa;proof-документы&#xa;отчеты" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_smtp" value="SMTP&#xa;исходящая почта&#xa;восстановление пароля" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_logs" value="Логи&#xa;application logs&#xa;ошибки и аудит" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_cache" value="Кэш / сессии&#xa;Django sessions&#xa;messages" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_ci" value="CI/CD&#xa;pytest&#xa;линтеры&#xa;нагрузочные тесты" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1860" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_backup" value="Backup/Restore&#xa;резервные копии&#xa;проверка целостности" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="2200" y="1450" width="300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_ext" value="Внешние клиенты/API&#xa;браузерные запросы&#xa;интеграционные вызовы" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#000000;fillColor=#ffffff;fontColor=#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="2540" y="1450" width="560" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- Edges all black and labeled -->
+        <mxCell id="e1" value="действия пользователя" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="ui_roles" target="ui_browser"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" value="рендер страниц" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="ui_browser" target="ui_templates"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" value="HTTP-запрос" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="ui_templates" target="ui_routes"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" value="dispatch запроса" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="ui_routes" target="app_controllers"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e5" value="маршрутизация auth" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="v_accounts"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" value="маршрутизация clients" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="v_clients"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="маршрутизация orders" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="v_orders"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" value="маршрутизация logistics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="v_logistics"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" value="маршрутизация reports" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="v_reports"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e10" value="данные формы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="v_orders" target="app_forms"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e11" value="валидация заказа" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_forms" target="f_orders"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e12" value="валидация клиента" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_forms" target="f_clients"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e13" value="валидация логистики" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.8;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_forms" target="f_logistics"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e14" value="бизнес-правила" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="v_orders" target="app_services"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e15" value="доставка/маршруты" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="v_logistics" target="app_services"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e16" value="логика заказа" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_order"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e17" value="резервы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_reserv"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e18" value="логика логистики" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_delivery"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e19" value="проверка прав" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_rbac"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e20" value="аудит действий" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_audit"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e21" value="уведомления" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.6;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="s_notify"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e22" value="ORM-запросы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_services" target="app_data"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e23" value="модели пользователей" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_users"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e24" value="модели клиентов" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_clients"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e25" value="модели каталога" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_catalog"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e26" value="модели заказов" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_orders"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e27" value="модели логистики" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_logistics"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e28" value="модели отчетов" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_reports"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e29" value="модели аудита" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_audit"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e30" value="админ-модели" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=1.4;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="m_admin"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e31" value="SQL (CRUD, JOIN, транзакции)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_data" target="inf_db"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e32" value="чтение/запись файлов" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="s_notify" target="inf_media"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e33" value="SMTP отправка" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="v_accounts" target="inf_smtp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e34" value="логирование" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="s_audit" target="inf_logs"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e35" value="сессии/сообщения" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="v_accounts" target="inf_cache"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e36" value="pipeline тестов" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="inf_ci"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e37" value="backup/restore" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="inf_db" target="inf_backup"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e38" value="внешние запросы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="inf_ext" target="ui_routes"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e39" value="HTTP-ответ" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;strokeColor=#000000;fontColor=#000000;endArrow=block;endFill=1;" edge="1" parent="1" source="app_controllers" target="ui_browser"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

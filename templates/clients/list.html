@@ -78,7 +78,16 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="text-muted">Нет клиентов</td></tr>
+            <tr>
+              <td colspan="7">
+                <div class="empty-state">
+                  <i data-lucide="users" class="mb-2" style="width: 42px; height: 42px;"></i>
+                  <div class="fw-semibold">Клиенты пока не найдены</div>
+                  <div class="text-muted mb-3">Добавьте первого клиента или измените условия фильтра.</div>
+                  <a href="/clients/create/" class="btn btn-primary">Добавить клиента</a>
+                </div>
+              </td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>

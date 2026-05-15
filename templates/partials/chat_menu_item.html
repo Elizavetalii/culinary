@@ -1,0 +1,6 @@
+<a href="/chat/" class="{% if '/chat/' in request.path %}active{% endif %}">
+  <i data-lucide="messages-square"></i>Чат
+  {% if chat_unread_count %}
+    <span class="badge-soft primary ms-auto">{{ chat_unread_count }}</span>
+  {% endif %}
+</a>

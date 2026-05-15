@@ -1,0 +1,769 @@
+{\rtf1\ansi\ansicpg1251\deff0
+{\fonttbl{\f0 Times New Roman;}}
+\viewkind4\uc1
+\pard\qc\f0\fs28\b Приложение А. Код программы\b0\par
+\par
+\pard\qj\fs24 В приложении приведены основные фрагменты исходного кода CRM-системы ООО «АРТ КУЛИНАРИЯ», отражающие архитектуру проекта, маршрутизацию, модели данных, обработку клиентов, API-интерфейс, проверку производственной доступности заказов и аналитическую отчетность.\par
+\par
+\pard\qc\fs26\b 1. Конфигурация проекта\b0\par
+\pard\fs22\b Файл: factory_crm/settings.py\b0\par
+\pard\ql\fs20 import os\par
+from pathlib import Path\par
+\par
+BASE_DIR = Path(__file__).resolve().parent.parent\par
+\par
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'insecure-secret-key-change-me')\par
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'\par
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')\par
+\par
+INSTALLED_APPS = [\par
+    'django.contrib.auth',\par
+    'django.contrib.contenttypes',\par
+    'django.contrib.sessions',\par
+    'django.contrib.messages',\par
+    'django.contrib.staticfiles',\par
+    'corsheaders',\par
+    'rest_framework',\par
+    'django_filters',\par
+    'drf_spectacular',\par
+    'crm',\par
+    'accounts',\par
+    'clients',\par
+    'orders',\par
+    'logistics',\par
+    'reports',\par
+    'dashboard',\par
+    'admin_panel',\par
+]\par
+\par
+MIDDLEWARE = [\par
+    'corsheaders.middleware.CorsMiddleware',\par
+    'django.middleware.security.SecurityMiddleware',\par
+    'django.contrib.sessions.middleware.SessionMiddleware',\par
+    'django.middleware.common.CommonMiddleware',\par
+    'django.middleware.csrf.CsrfViewMiddleware',\par
+    'django.contrib.auth.middleware.AuthenticationMiddleware',\par
+    'django.contrib.messages.middleware.MessageMiddleware',\par
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',\par
+]\par
+\par
+ROOT_URLCONF = 'factory_crm.urls'\par
+\par
+DATABASES = \{\par
+    'default': \{\par
+        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.sqlite3'),\par
+        'NAME': os.environ.get('DB_NAME', BASE_DIR / 'db.sqlite3'),\par
+        'USER': os.environ.get('DB_USER', ''),\par
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),\par
+        'HOST': os.environ.get('DB_HOST', ''),\par
+        'PORT': os.environ.get('DB_PORT', ''),\par
+        'ATOMIC_REQUESTS': True,\par
+    \}\par
+\}\par
+\par
+LANGUAGE_CODE = 'ru-ru'\par
+TIME_ZONE = 'UTC'\par
+USE_I18N = True\par
+USE_TZ = True\par
+\par
+STATIC_URL = '/static/'\par
+STATIC_ROOT = BASE_DIR / 'staticfiles'\par
+STATICFILES_DIRS = [BASE_DIR / 'static']\par
+MEDIA_URL = '/media/'\par
+MEDIA_ROOT = BASE_DIR / 'media'\par
+\par
+LOGISTICS_DEPOT_ADDRESS = os.environ.get('LOGISTICS_DEPOT_ADDRESS', 'Химки')\par
+LOGISTICS_DEPOT_LAT = float(os.environ.get('LOGISTICS_DEPOT_LAT', '55.886'))\par
+LOGISTICS_DEPOT_LNG = float(os.environ.get('LOGISTICS_DEPOT_LNG', '37.442'))\par
+LOGISTICS_AVG_SPEED_KMH = int(os.environ.get('LOGISTICS_AVG_SPEED_KMH', '35'))\par
+LOGISTICS_RETURN_TO_DEPOT = os.environ.get('LOGISTICS_RETURN_TO_DEPOT', 'true').lower() == 'true'\par
+LOGISTICS_SERVICE_TIME_MINUTES = int(os.environ.get('LOGISTICS_SERVICE_TIME_MINUTES', '15'))\par
+\par
+ORDER_CUTOFF_TIME = "16:00"\par
+ORDER_MORNING_CUTOFF_TIME = "10:00"\par
+PRODUCTION_WINDOW_DAY_START = "06:00"\par
+PRODUCTION_WINDOW_DAY_END = "18:00"\par
+PRODUCTION_WINDOW_NIGHT_START = "22:00"\par
+PRODUCTION_WINDOW_NIGHT_END = "06:00"\par
+PRODUCTION_MAX_WEIGHT_KG = 500\par
+\par
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'\par
+AUTH_USER_MODEL = 'crm.User'\par
+\par
+REST_FRAMEWORK = \{\par
+    'DEFAULT_PERMISSION_CLASSES': [\par
+        'rest_framework.permissions.IsAuthenticated',\par
+    ],\par
+    'DEFAULT_AUTHENTICATION_CLASSES': [\par
+        'rest_framework_simplejwt.authentication.JWTAuthentication',\par
+        'rest_framework.authentication.SessionAuthentication',\par
+        'rest_framework.authentication.BasicAuthentication',\par
+    ],\par
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',\par
+    'PAGE_SIZE': 20,\par
+    'DEFAULT_FILTER_BACKENDS': [\par
+        'django_filters.rest_framework.DjangoFilterBackend',\par
+        'rest_framework.filters.SearchFilter',\par
+        'rest_framework.filters.OrderingFilter',\par
+    ],\par
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',\par
+\}\par
+\par
+SPECTACULAR_SETTINGS = \{\par
+    'TITLE': 'Art Culinary CRM API',\par
+    'DESCRIPTION': 'REST API для продаж, заказов, логистики и техкарт.',\par
+    'VERSION': '1.0.0',\par
+    'SERVE_INCLUDE_SCHEMA': True,\par
+\}\par
+\par
+\pard\qc\fs26\b 2. Маршрутизация приложения\b0\par
+\pard\fs22\b Файл: factory_crm/urls.py\b0\par
+\pard\ql\fs20 from django.urls import path, include\par
+from rest_framework.routers import DefaultRouter\par
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView\par
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView\par
+from django.conf import settings\par
+from django.conf.urls.static import static\par
+\par
+from crm import api\par
+from orders import views as order_views\par
+\par
+router = DefaultRouter()\par
+router.register(r"roles", api.RoleViewSet)\par
+router.register(r"users", api.UserViewSet)\par
+router.register(r"clients", api.ClientViewSet)\par
+router.register(r"client-contacts", api.ClientContactViewSet)\par
+router.register(r"orders", api.OrderViewSet)\par
+router.register(r"order-items", api.OrderItemViewSet)\par
+router.register(r"interactions", api.InteractionViewSet)\par
+router.register(r"stages", api.CooperationStageViewSet)\par
+router.register(r"stage-history", api.ClientStageHistoryViewSet)\par
+router.register(r"ingredients", api.IngredientViewSet)\par
+router.register(r"dishes", api.DishViewSet)\par
+router.register(r"techcards", api.TechCardViewSet)\par
+router.register(r"techcard-components", api.TechCardComponentViewSet)\par
+router.register(r"techcard-variants", api.TechCardVariantViewSet)\par
+router.register(r"couriers", api.CourierViewSet)\par
+router.register(r"deliveries", api.DeliveryViewSet)\par
+router.register(r"routes", api.RouteViewSet)\par
+router.register(r"courier-assignments", api.CourierAssignmentViewSet)\par
+router.register(r"route-stops", api.RouteStopViewSet)\par
+\par
+urlpatterns = [\par
+    path("", include("accounts.urls")),\par
+    path("dashboard/", include("dashboard.urls")),\par
+    path("clients/", include("clients.urls")),\par
+    path("orders/", include("orders.urls")),\par
+    path("logistics/", include("logistics.urls")),\par
+    path("reports/", include("reports.urls")),\par
+    path("admin-panel/", include("admin_panel.urls")),\par
+    path("api/orders/availability/", order_views.order_availability, name="order-availability"),\par
+    path("api/", include(router.urls)),\par
+    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),\par
+    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),\par
+    path("api-auth/", include("rest_framework.urls")),\par
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),\par
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),\par
+]\par
+\par
+if settings.DEBUG:\par
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)\par
+\par
+\pard\qc\fs26\b 3. Основные модели CRM-системы\b0\par
+\pard\fs22\b Файл: crm/models.py\b0\par
+\pard\ql\fs20 from django.db import models\par
+from django.db.models import Sum\par
+from django.contrib.auth.models import AbstractUser\par
+from django.utils import timezone\par
+\par
+class Role(models.Model):\par
+    name = models.CharField(max_length=64, unique=True)\par
+\par
+    class Meta:\par
+        verbose_name = 'Роль'\par
+        verbose_name_plural = 'Роли'\par
+\par
+    def __str__(self):\par
+        return self.name\par
+\par
+class User(AbstractUser):\par
+    email = models.EmailField('Email', unique=True)\par
+    full_name = models.CharField('ФИО', max_length=255)\par
+    phone = models.CharField('Телефон', max_length=32, blank=True)\par
+    roles = models.ManyToManyField(Role, through='UserRole', related_name='users', blank=True)\par
+\par
+    REQUIRED_FIELDS = ['full_name', 'email']\par
+\par
+    class Meta:\par
+        verbose_name = 'Пользователь'\par
+        verbose_name_plural = 'Пользователи'\par
+\par
+    def __str__(self):\par
+        return self.full_name or self.username\par
+\par
+class ClientType(models.TextChoices):\par
+    STORE = 'store', 'Магазин'\par
+    CAFE = 'cafe', 'Кафе'\par
+    RESTAURANT = 'restaurant', 'Ресторан'\par
+    DISTRIBUTOR = 'distributor', 'Дистрибьютор'\par
+    OTHER = 'other', 'Другое'\par
+\par
+class ClientStatus(models.TextChoices):\par
+    PROSPECT = 'prospect', 'Переговоры'\par
+    ACTIVE = 'active', 'Активен'\par
+    PAUSED = 'paused', 'Приостановлен'\par
+    LOST = 'lost', 'Закрыт'\par
+\par
+class Client(models.Model):\par
+    name = models.CharField('Название', max_length=255)\par
+    client_type = models.CharField('Тип', max_length=32, choices=ClientType.choices, default=ClientType.STORE)\par
+    inn = models.CharField('ИНН', max_length=20, blank=True)\par
+    kpp = models.CharField('КПП', max_length=20, blank=True)\par
+    default_delivery_address = models.CharField('Адрес доставки по умолчанию', max_length=255, blank=True)\par
+    email = models.EmailField('Email', blank=True)\par
+    phone = models.CharField('Телефон', max_length=32, blank=True)\par
+    status = models.CharField('Статус', max_length=20, choices=ClientStatus.choices, default=ClientStatus.PROSPECT)\par
+    current_stage = models.ForeignKey("CooperationStage", on_delete=models.SET_NULL, null=True, blank=True, related_name="clients")\par
+    responsible_manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='clients')\par
+    created_at = models.DateTimeField('Создан', auto_now_add=True, null=True, blank=True)\par
+    daily_max_weight_kg = models.DecimalField('Макс. вес в день (кг)', max_digits=10, decimal_places=2, null=True, blank=True)\par
+    daily_min_qty = models.DecimalField('Мин. объём заказа', max_digits=10, decimal_places=2, null=True, blank=True)\par
+    guaranteed_volume_kg = models.DecimalField('Гарантированный объём (кг)', max_digits=10, decimal_places=2, null=True, blank=True)\par
+\par
+    class Meta:\par
+        verbose_name = 'Клиент'\par
+        verbose_name_plural = 'Клиенты'\par
+\par
+    def __str__(self):\par
+        return self.name\par
+\par
+class CooperationStage(models.Model):\par
+    name = models.CharField('Название этапа', max_length=128)\par
+    order = models.PositiveSmallIntegerField('Порядок', default=1)\par
+    is_active = models.BooleanField('Активен', default=True)\par
+\par
+    class Meta:\par
+        ordering = ['order']\par
+        verbose_name = 'Этап сотрудничества'\par
+        verbose_name_plural = 'Этапы сотрудничества'\par
+\par
+    def __str__(self):\par
+        return self.name\par
+\par
+class Interaction(models.Model):\par
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='interactions')\par
+    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='interactions')\par
+    interaction_type = models.CharField('Тип', max_length=20, choices=[('call', 'Звонок'), ('meeting', 'Встреча'), ('email', 'Email')])\par
+    note = models.TextField('Заметка', blank=True)\par
+    happened_at = models.DateTimeField('Дата/время', default=timezone.now)\par
+\par
+class Order(models.Model):\par
+    order_number = models.CharField('Номер заказа', max_length=50, unique=True)\par
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='orders')\par
+    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')\par
+    address = models.CharField('Адрес доставки', max_length=255, blank=True)\par
+    status = models.CharField('Статус', max_length=64, choices=OrderStatus.choices, default=OrderStatus.DRAFT)\par
+    delivery_date = models.DateField('Дата доставки', null=True, blank=True)\par
+    delivery_time = models.TimeField('Время доставки', null=True, blank=True)\par
+    delivery_type = models.CharField('Тип доставки', max_length=32, choices=[('Регулярная', 'Регулярная'), ('Разовая', 'Разовая'), ('Срочная', 'Срочная')], default='Разовая')\par
+    production_date = models.DateField('Дата производства', null=True, blank=True)\par
+    production_shift = models.CharField('Смена', max_length=32, blank=True)\par
+    production_window_start = models.TimeField('Окно производства (с)', null=True, blank=True)\par
+    production_window_end = models.TimeField('Окно производства (до)', null=True, blank=True)\par
+    comments = models.TextField('Комментарии', blank=True)\par
+    total_amount = models.DecimalField('Сумма итого', max_digits=12, decimal_places=2, default=0)\par
+    is_archived = models.BooleanField('В архиве', default=False)\par
+    created_at = models.DateTimeField(auto_now_add=True)\par
+    updated_at = models.DateTimeField(auto_now=True)\par
+\par
+    @classmethod\par
+    def generate_order_number(cls):\par
+        date_part = timezone.now().strftime("%Y%m%d")\par
+        base = f"ORD-\{date_part\}-"\par
+        last = cls.objects.filter(order_number__startswith=base).order_by("-order_number").first()\par
+        seq = 1\par
+        if last and last.order_number.split("-")[-1].isdigit():\par
+            seq = int(last.order_number.split("-")[-1]) + 1\par
+        return f"\{base\}\{seq:03d\}"\par
+\par
+    def recalc_total(self):\par
+        total = self.items.aggregate(total=Sum("line_total"))["total"] or 0\par
+        if self.total_amount != total:\par
+            self.total_amount = total\par
+            self.save(update_fields=["total_amount"])\par
+\par
+class Delivery(models.Model):\par
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='deliveries')\par
+    courier = models.ForeignKey(Courier, on_delete=models.SET_NULL, null=True, blank=True, related_name='deliveries')\par
+    route = models.ForeignKey("Route", on_delete=models.SET_NULL, null=True, blank=True, related_name='deliveries')\par
+    status = models.CharField('Статус', max_length=20, choices=DeliveryStatus.choices, default=DeliveryStatus.UNASSIGNED)\par
+    planned_at = models.DateTimeField('Плановая дата/время', null=True, blank=True)\par
+    departure_time = models.DateTimeField('Время выезда', null=True, blank=True)\par
+    delivered_at = models.DateTimeField('Доставлено', null=True, blank=True)\par
+    delivery_date = models.DateField('Дата доставки', null=True, blank=True)\par
+    address = models.CharField('Адрес', max_length=255, blank=True)\par
+    note = models.TextField('Примечание', blank=True)\par
+    is_sent = models.BooleanField('Отправлен', default=False)\par
+\par
+    def save(self, *args, **kwargs):\par
+        if self.planned_at and not self.delivery_date:\par
+            self.delivery_date = self.planned_at.date()\par
+        super().save(*args, **kwargs)\par
+\par
+class Route(models.Model):\par
+    logistician = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='routes')\par
+    planned_date = models.DateField('Дата маршрута')\par
+    status = models.CharField('Статус', max_length=20, choices=RouteStatus.choices, default=RouteStatus.DRAFT)\par
+    max_duration_minutes = models.PositiveSmallIntegerField('Макс. длительность (мин)', default=720)\par
+    soft_limit_stops = models.PositiveSmallIntegerField('Мягкий лимит точек', default=30)\par
+    strict_mode = models.BooleanField('Строгий режим лимита точек', default=False)\par
+    notes = models.TextField('Заметки', blank=True)\par
+\par
+class RouteStop(models.Model):\par
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name='stops')\par
+    delivery = models.ForeignKey(Delivery, on_delete=models.CASCADE, related_name='route_stops')\par
+    sequence_index = models.PositiveSmallIntegerField('Порядок', default=1)\par
+    planned_time = models.DateTimeField('Плановое время', null=True, blank=True)\par
+    actual_time = models.DateTimeField('Фактическое время', null=True, blank=True)\par
+    service_time_minutes = models.PositiveSmallIntegerField('Время обслуживания (мин)', default=15)\par
+    note = models.CharField('Примечание', max_length=255, blank=True)\par
+    status = models.CharField('Статус', max_length=20, choices=StopStatus.choices, default=StopStatus.DRAFT)\par
+    delivery_date = models.DateField('Дата доставки', null=True, blank=True)\par
+    failure_reason = models.TextField('Причина недоставки', blank=True)\par
+    proof_of_delivery = models.FileField('Документ доставки', upload_to='delivery_proofs/', null=True, blank=True)\par
+\par
+\pard\qc\fs26\b 4. Формы ввода данных клиентов\b0\par
+\pard\fs22\b Файл: clients/forms.py\b0\par
+\pard\ql\fs20 from django import forms\par
+from crm.forms import BootstrapFormMixin\par
+from crm.models import Client, Interaction, ClientStageHistory, CooperationStage\par
+\par
+class ClientForm(BootstrapFormMixin, forms.ModelForm):\par
+    class Meta:\par
+        model = Client\par
+        fields = [\par
+            "name",\par
+            "client_type",\par
+            "inn",\par
+            "kpp",\par
+            "default_delivery_address",\par
+            "email",\par
+            "phone",\par
+            "status",\par
+            "current_stage",\par
+        ]\par
+\par
+    def __init__(self, *args, **kwargs):\par
+        super().__init__(*args, **kwargs)\par
+        self._init_bootstrap()\par
+\par
+class InteractionForm(BootstrapFormMixin, forms.ModelForm):\par
+    class Meta:\par
+        model = Interaction\par
+        fields = ["interaction_type", "note", "happened_at"]\par
+        labels = \{\par
+            "interaction_type": "Тип взаимодействия",\par
+            "note": "Заметка",\par
+            "happened_at": "Дата и время",\par
+        \}\par
+        widgets = \{\par
+            "happened_at": forms.DateTimeInput(attrs=\{"type": "datetime-local"\}, format="%Y-%m-%dT%H:%M"),\par
+        \}\par
+\par
+    def __init__(self, *args, **kwargs):\par
+        super().__init__(*args, **kwargs)\par
+        self._init_bootstrap()\par
+        self.fields["happened_at"].input_formats = ["%Y-%m-%dT%H:%M"]\par
+\par
+class StageChangeForm(BootstrapFormMixin, forms.ModelForm):\par
+    stage = forms.ModelChoiceField(\par
+        queryset=CooperationStage.objects.none(),\par
+        label="Этап сотрудничества",\par
+        required=True,\par
+    )\par
+\par
+    class Meta:\par
+        model = ClientStageHistory\par
+        fields = ["stage", "comment"]\par
+        labels = \{"comment": "Комментарий"\}\par
+\par
+    def __init__(self, *args, **kwargs):\par
+        super().__init__(*args, **kwargs)\par
+        self.fields["stage"].queryset = CooperationStage.objects.filter(is_active=True)\par
+        self._init_bootstrap()\par
+\par
+\pard\qc\fs26\b 5. Представления модуля клиентов\b0\par
+\pard\fs22\b Файл: clients/views.py\b0\par
+\pard\ql\fs20 from django.shortcuts import render, redirect, get_object_or_404\par
+from django.db.models import Q\par
+from django.contrib import messages\par
+from accounts.utils import roles_required\par
+from crm.models import Client, CooperationStage, ClientStageHistory, Interaction, ClientStatus, Order\par
+from .forms import ClientForm, InteractionForm, StageChangeForm\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def client_list(request):\par
+    qs = Client.objects.select_related("current_stage", "responsible_manager").all()\par
+    q = request.GET.get("q")\par
+    status = request.GET.get("status")\par
+    stage = request.GET.get("stage")\par
+    sort = request.GET.get("sort")\par
+    if q:\par
+        qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q))\par
+    if status:\par
+        qs = qs.filter(status=status)\par
+    if stage:\par
+        qs = qs.filter(current_stage_id=stage)\par
+    if sort in ["name", "-name", "created_at", "-created_at"]:\par
+        qs = qs.order_by(sort)\par
+    stages = CooperationStage.objects.filter(is_active=True)\par
+    return render(\par
+        request,\par
+        "clients/list.html",\par
+        \{"clients": qs, "stages": stages, "status_choices": ClientStatus.choices\},\par
+    )\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def client_create(request):\par
+    form = ClientForm(request.POST or None)\par
+    if request.method == "POST" and form.is_valid():\par
+        obj = form.save(commit=False)\par
+        if request.user.roles.filter(name__iexact="Менеджер").exists():\par
+            obj.responsible_manager = request.user\par
+        obj.save()\par
+        form.save_m2m()\par
+        messages.success(request, "Клиент создан.")\par
+        return redirect("/clients/")\par
+    return render(request, "clients/form.html", \{"form": form, "title": "Новый клиент"\})\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def client_edit(request, pk):\par
+    obj = get_object_or_404(Client, pk=pk)\par
+    form = ClientForm(request.POST or None, instance=obj)\par
+    if request.method == "POST" and form.is_valid():\par
+        form.save()\par
+        messages.success(request, "Клиент обновлён.")\par
+        return redirect("/clients/")\par
+    return render(request, "clients/form.html", \{"form": form, "title": "Редактирование клиента"\})\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def client_delete(request, pk):\par
+    obj = get_object_or_404(Client, pk=pk)\par
+    if request.method == "POST":\par
+        obj.delete()\par
+        messages.success(request, "Клиент удалён.")\par
+        return redirect("/clients/")\par
+    return render(request, "clients/delete.html", \{"object": obj\})\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def client_detail(request, pk):\par
+    client = get_object_or_404(Client, pk=pk)\par
+    interactions = Interaction.objects.filter(client=client).select_related("manager")\par
+    stage_history = ClientStageHistory.objects.filter(client=client).select_related("stage", "changed_by")\par
+    client_orders = Order.objects.filter(client=client).order_by("-created_at")\par
+\par
+    interaction_form = InteractionForm(prefix="interaction")\par
+    stage_form = StageChangeForm(prefix="stage", initial=\{"stage": client.current_stage\})\par
+\par
+    if request.method == "POST":\par
+        action = request.POST.get("action")\par
+        if action == "add_interaction":\par
+            interaction_form = InteractionForm(request.POST, prefix="interaction")\par
+            if interaction_form.is_valid():\par
+                obj = interaction_form.save(commit=False)\par
+                obj.client = client\par
+                obj.manager = request.user\par
+                obj.save()\par
+                messages.success(request, "Взаимодействие добавлено.")\par
+                return redirect(f"/clients/\{client.id\}/")\par
+        if action == "change_stage":\par
+            stage_form = StageChangeForm(request.POST, prefix="stage")\par
+            if stage_form.is_valid():\par
+                stage = stage_form.cleaned_data["stage"]\par
+                comment = stage_form.cleaned_data.get("comment", "")\par
+                ClientStageHistory.objects.create(\par
+                    client=client,\par
+                    stage=stage,\par
+                    changed_by=request.user,\par
+                    comment=comment,\par
+                )\par
+                client.current_stage = stage\par
+                client.save(update_fields=["current_stage"])\par
+                messages.success(request, "Этап сотрудничества обновлён.")\par
+                return redirect(f"/clients/\{client.id\}/")\par
+\par
+    return render(\par
+        request,\par
+        "clients/detail.html",\par
+        \{\par
+            "client": client,\par
+            "interactions": interactions,\par
+            "stage_history": stage_history,\par
+            "client_orders": client_orders,\par
+            "interaction_form": interaction_form,\par
+            "stage_form": stage_form,\par
+        \},\par
+    )\par
+\par
+\pard\qc\fs26\b 6. API-модуль CRM-системы\b0\par
+\pard\fs22\b Файл: crm/api.py\b0\par
+\pard\ql\fs20 from rest_framework import viewsets, permissions\par
+from rest_framework.decorators import action\par
+from rest_framework.response import Response\par
+from rest_framework import serializers\par
+from . import models\par
+\par
+class RoleSerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.Role\par
+        fields = ['id', 'name']\par
+\par
+class UserSerializer(serializers.ModelSerializer):\par
+    roles = RoleSerializer(many=True, read_only=True)\par
+\par
+    class Meta:\par
+        model = models.User\par
+        fields = ['id', 'username', 'full_name', 'email', 'phone', 'roles', 'is_active', 'is_staff']\par
+\par
+class ClientContactSerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.ClientContact\par
+        fields = ['id', 'client', 'full_name', 'position', 'phone', 'email', 'is_primary']\par
+\par
+class ClientSerializer(serializers.ModelSerializer):\par
+    contacts = ClientContactSerializer(many=True, read_only=True)\par
+\par
+    class Meta:\par
+        model = models.Client\par
+        fields = ['id', 'name', 'client_type', 'inn', 'kpp', 'default_delivery_address', 'email', 'phone', 'status', 'current_stage', 'responsible_manager', 'created_at', 'contacts']\par
+\par
+class OrderItemSerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.OrderItem\par
+        fields = ['id', 'order', 'dish', 'ingredient', 'custom_tech_card', 'quantity', 'unit_price', 'line_total', 'supply_type']\par
+\par
+class OrderSerializer(serializers.ModelSerializer):\par
+    items = OrderItemSerializer(many=True, read_only=True)\par
+\par
+    class Meta:\par
+        model = models.Order\par
+        fields = ['id', 'order_number', 'client', 'manager', 'address', 'status', 'comments', 'total_amount', 'is_archived', 'created_at', 'updated_at', 'items']\par
+\par
+class DeliverySerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.Delivery\par
+        fields = [\par
+            'id', 'order', 'courier', 'route', 'status', 'planned_at', 'departure_time', 'delivered_at',\par
+            'address', 'cargo_weight_kg', 'cargo_volume_m3', 'cargo_length_cm', 'cargo_width_cm', 'cargo_height_cm',\par
+            'note', 'is_sent',\par
+        ]\par
+\par
+class RouteSerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.Route\par
+        fields = ['id', 'logistician', 'planned_date', 'status', 'notes']\par
+\par
+class BaseAuthViewSet(viewsets.ModelViewSet):\par
+    permission_classes = [permissions.IsAuthenticated]\par
+\par
+class ClientViewSet(BaseAuthViewSet):\par
+    queryset = models.Client.objects.all()\par
+    serializer_class = ClientSerializer\par
+    search_fields = ['name', 'inn', 'kpp', 'email', 'phone']\par
+    filterset_fields = ['client_type', 'status', 'responsible_manager']\par
+    ordering_fields = ['name', 'status']\par
+\par
+class OrderViewSet(BaseAuthViewSet):\par
+    queryset = models.Order.objects.select_related('client', 'manager').prefetch_related('items').all()\par
+    serializer_class = OrderSerializer\par
+    filterset_fields = ['status', 'client', 'manager']\par
+    search_fields = ['order_number', 'client__name']\par
+    ordering_fields = ['created_at', 'status', 'total_amount']\par
+\par
+    @action(detail=True, methods=['get'])\par
+    def items(self, request, pk=None):\par
+        order = self.get_object()\par
+        data = OrderItemSerializer(order.items.all(), many=True).data\par
+        return Response(data)\par
+\par
+class DeliveryViewSet(BaseAuthViewSet):\par
+    queryset = models.Delivery.objects.all()\par
+    serializer_class = DeliverySerializer\par
+\par
+class RouteViewSet(BaseAuthViewSet):\par
+    queryset = models.Route.objects.all()\par
+    serializer_class = RouteSerializer\par
+\par
+\pard\qc\fs26\b 7. Проверка производственной доступности заказов\b0\par
+\pard\fs22\b Файл: orders/views.py\b0\par
+\pard\ql\fs20 def order_availability(request):\par
+    delivery_date = request.GET.get("delivery_date")\par
+    client_id = request.GET.get("client_id")\par
+    order_id = request.GET.get("order_id")\par
+    if not delivery_date:\par
+        return HttpResponseBadRequest("delivery_date обязателен")\par
+    max_capacity = getattr(settings, "PRODUCTION_MAX_WEIGHT_KG", None)\par
+    reserved_map = _get_reserved_qty_map(delivery_date, exclude_order_id=order_id)\par
+    reserved_capacity = ProductionReservation.objects.filter(production_date=delivery_date).aggregate(\par
+        total=Sum("weight_kg")\par
+    )["total"] or 0\par
+    dishes = []\par
+    for dish in Dish.objects.filter(is_active=True).order_by("name"):\par
+        daily_capacity = float(dish.daily_capacity) if dish.daily_capacity is not None else None\par
+        reserved_qty = float(reserved_map.get(dish.id, 0) or 0)\par
+        available_qty = None\par
+        if daily_capacity is not None:\par
+            available_qty = max(daily_capacity - reserved_qty, 0)\par
+        weight_per_unit = float(dish.unit_weight_kg) if dish.unit_weight_kg is not None else None\par
+        max_by_capacity = None\par
+        if max_capacity is not None:\par
+            if dish.base_uom == Dish.BaseUom.KG:\par
+                max_by_capacity = max_capacity - reserved_capacity\par
+            elif dish.base_uom == Dish.BaseUom.PCS and weight_per_unit:\par
+                max_by_capacity = (max_capacity - reserved_capacity) / weight_per_unit\par
+        dishes.append(\par
+            \{\par
+                "dish_id": dish.id,\par
+                "dish_name": dish.name,\par
+                "unit": dish.unit,\par
+                "base_uom": dish.base_uom,\par
+                "quantity_scale": dish.quantity_scale,\par
+                "weight_per_unit_kg": weight_per_unit,\par
+                "daily_capacity": daily_capacity,\par
+                "reserved_qty": round(reserved_qty, 3),\par
+                "available_qty": round(available_qty, 3) if available_qty is not None else None,\par
+                "max_by_capacity": round(max_by_capacity, 3) if max_by_capacity is not None else None,\par
+                "min_batch": float(dish.min_batch_qty) if dish.min_batch_qty else None,\par
+                "step": float(dish.batch_multiple_qty) if dish.batch_multiple_qty else None,\par
+                "price": float(dish.default_price) if dish.default_price is not None else None,\par
+            \}\par
+        )\par
+    return JsonResponse(\par
+        \{\par
+            "production_date": delivery_date,\par
+            "capacity_total": max_capacity if max_capacity is not None else 0,\par
+            "capacity_reserved": reserved_capacity,\par
+            "capacity_available": max_capacity - reserved_capacity if max_capacity is not None else 0,\par
+            "dishes": dishes,\par
+        \}\par
+    )\par
+\par
+\pard\qc\fs26\b 8. Аналитическая отчетность\b0\par
+\pard\fs22\b Файл: reports/views.py\b0\par
+\pard\ql\fs20 from django.shortcuts import render, redirect, get_object_or_404\par
+from django.db.models import Sum, Count\par
+from django.db.models.functions import TruncDate\par
+from django.utils import timezone\par
+from accounts.utils import roles_required\par
+from .models import Report\par
+from .forms import ReportForm\par
+from crm.models import Order, OrderStatus, Client\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def reports_list(request):\par
+    qs = Report.objects.all().order_by("-created_at")\par
+    return render(request, "reports/list.html", \{"reports": qs\})\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def report_create(request):\par
+    initial = \{\}\par
+    if request.method == "GET":\par
+        if request.GET.get("from"):\par
+            initial["period_from"] = request.GET.get("from")\par
+        if request.GET.get("to"):\par
+            initial["period_to"] = request.GET.get("to")\par
+    form = ReportForm(request.POST or None, request.FILES or None, initial=initial)\par
+    if request.method == "POST" and form.is_valid():\par
+        obj = form.save(commit=False)\par
+        obj.created_by = request.user\par
+        obj.save()\par
+        return redirect("/reports/")\par
+    return render(request, "reports/form.html", \{"form": form, "title": "Создать отчёт"\})\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def report_validate(request, pk):\par
+    report = get_object_or_404(Report, pk=pk)\par
+    if request.method == "POST":\par
+        if report.period_from and report.period_to and report.period_from > report.period_to:\par
+            report.validation_status = "error"\par
+            report.validation_message = "Дата начала больше даты окончания."\par
+        elif not report.file:\par
+            report.validation_status = "warn"\par
+            report.validation_message = "Файл отчёта не загружен."\par
+        else:\par
+            report.validation_status = "ok"\par
+            report.validation_message = "Проверка пройдена успешно."\par
+        report.save(update_fields=["validation_status", "validation_message"])\par
+    return redirect("/reports/")\par
+\par
+@roles_required(["Менеджер", "Администратор системы"])\par
+def analytics_view(request):\par
+    date_from = request.GET.get("from")\par
+    date_to = request.GET.get("to")\par
+    status = request.GET.get("status")\par
+    client_id = request.GET.get("client")\par
+    qs = Order.objects.all()\par
+    if date_from:\par
+        qs = qs.filter(created_at__date__gte=date_from)\par
+    if date_to:\par
+        qs = qs.filter(created_at__date__lte=date_to)\par
+    if status:\par
+        qs = qs.filter(status=status)\par
+    if client_id:\par
+        qs = qs.filter(client_id=client_id)\par
+    total_orders = qs.count()\par
+    revenue = qs.aggregate(total=Sum("total_amount"))["total"] or 0\par
+    avg_check = round((revenue / total_orders), 2) if total_orders else 0\par
+    status_labels = dict(OrderStatus.choices)\par
+    raw_status = list(qs.values("status").annotate(cnt=Count("id")))\par
+    max_cnt = max([row["cnt"] for row in raw_status], default=0) or 1\par
+    by_status = [\par
+        \{\par
+            "status": row["status"],\par
+            "label": status_labels.get(row["status"], row["status"]),\par
+            "cnt": row["cnt"],\par
+            "percent": int((row["cnt"] / max_cnt) * 100),\par
+        \}\par
+        for row in raw_status\par
+    ]\par
+    by_day = (\par
+        qs.annotate(day=TruncDate("created_at"))\par
+        .values("day")\par
+        .annotate(cnt=Count("id"), revenue=Sum("total_amount"))\par
+        .order_by("day")\par
+    )\par
+    by_day = [\par
+        \{\par
+            "day": row["day"].strftime("%Y-%m-%d") if row["day"] else "",\par
+            "cnt": row["cnt"],\par
+            "revenue": float(row["revenue"] or 0),\par
+        \}\par
+        for row in by_day\par
+    ]\par
+    by_client = (\par
+        qs.values("client__name")\par
+        .annotate(cnt=Count("id"), revenue=Sum("total_amount"))\par
+        .order_by("-revenue")[:10]\par
+    )\par
+    by_client = [\par
+        \{\par
+            "client": row["client__name"] or "—",\par
+            "cnt": row["cnt"],\par
+            "revenue": float(row["revenue"] or 0),\par
+        \}\par
+        for row in by_client\par
+    ]\par
+    clients = Client.objects.all()\par
+    context = \{\par
+        "total_orders": total_orders,\par
+        "revenue": revenue,\par
+        "avg_check": avg_check,\par
+        "by_status": list(by_status),\par
+        "by_day": by_day,\par
+        "by_client": by_client,\par
+        "today": timezone.now().date(),\par
+        "clients": clients,\par
+        "statuses": OrderStatus.choices,\par
+    \}\par
+    return render(request, "reports/analytics.html", context)\par
+}

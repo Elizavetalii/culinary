@@ -19,4 +19,6 @@
   <a href="/logistics/profile/" class="{% if '/logistics/profile/' in request.path %}active{% endif %}">
     <i data-lucide="settings"></i>Профиль логиста
   </a>
+  <div class="menu-title">Связь</div>
+  {% include "partials/chat_menu_item.html" %}
 </div>

@@ -1,16 +1,8 @@
 stages:
-  - build
+  - build 
   - lint
   - api
   - security
-
-variables:
-  VENV_PATH: ".venv"
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  DJANGO_SETTINGS_MODULE: "factory_crm.settings"
-  SECRET_KEY: "ci-temp-secret"
-  DEBUG: "true"
-  ALLOWED_HOSTS: "localhost,127.0.0.1"
 
 cache:
   key: "venv-$CI_COMMIT_REF_SLUG"
@@ -21,8 +13,8 @@ cache:
 before_script:
   - echo "Подготовка виртуального окружения и установка зависимостей"
   - python3 --version
-  - python3 -m venv "$VENV_PATH"
-  - source "$VENV_PATH/bin/activate"
+  - python3 -m venv ".venv"
+  - source ".venv/bin/activate"
   - python -m pip install --upgrade pip
   - pip install -r requirements.txt
 
@@ -30,7 +22,7 @@ build:check:
   stage: build
   script:
     - echo "Проверяю корректность конфигурации Django"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - python manage.py check
     - echo "Проверка конфигурации завершена успешно"
 
@@ -38,7 +30,7 @@ build:collectstatic:
   stage: build
   script:
     - echo "Собираю статические файлы"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - python manage.py collectstatic --noinput
     - echo "Статические файлы собраны"
   artifacts:
@@ -51,7 +43,7 @@ lint:ruff:
   stage: lint
   script:
     - echo "Запускаю линтер Ruff"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - pip install ruff
     - mkdir -p reports
     - ruff check . --output-format=json > reports/ruff.json || true
@@ -67,7 +59,7 @@ api:schema:
   stage: api
   script:
     - echo "Генерирую OpenAPI схему"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - mkdir -p artifacts
     - python manage.py spectacular --file artifacts/openapi.yaml
     - echo "OpenAPI схема создана"
@@ -81,7 +73,7 @@ security:bandit:
   stage: security
   script:
     - echo "Запускаю анализ безопасности Bandit"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - pip install bandit
     - mkdir -p reports
     - bandit -r . -f json -o reports/bandit.json || true
@@ -97,7 +89,7 @@ security:pip-audit:
   stage: security
   script:
     - echo "Проверяю зависимости на известные уязвимости"
-    - source "$VENV_PATH/bin/activate"
+    - source ".venv/bin/activate"
     - pip install pip-audit
     - mkdir -p reports
     - pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true

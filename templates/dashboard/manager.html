@@ -37,6 +37,40 @@
     </div>
   </div>
 
+  <div class="card mb-4">
+    <div class="section-header">
+      <div>
+        <h5 class="mb-1">Демо-режим</h5>
+        <div class="text-muted small">Быстрый сценарий для показа ключевых операций за сегодня</div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="/clients/create/" class="btn btn-primary btn-sm">Создать клиента</a>
+        <a href="/orders/create/" class="btn btn-outline-secondary btn-sm">Создать заказ</a>
+        <a href="/reports/analytics/" class="btn btn-outline-secondary btn-sm">Открыть аналитику</a>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="p-3 rounded border" style="background: var(--bg-2);">
+          <div class="kpi-value">{{ demo_stats.clients_today }}</div>
+          <div class="kpi-label">Клиентов добавлено сегодня</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="p-3 rounded border" style="background: var(--bg-2);">
+          <div class="kpi-value">{{ demo_stats.orders_today }}</div>
+          <div class="kpi-label">Заказов создано сегодня</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="p-3 rounded border" style="background: var(--bg-2);">
+          <div class="kpi-value">{{ demo_stats.deliveries_today }}</div>
+          <div class="kpi-label">Доставок запланировано сегодня</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row g-3">
     <div class="col-lg-6">
       <div class="card">

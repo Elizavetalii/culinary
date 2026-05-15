@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Административная аналитика{% endblock %}
+{% block sidebar %}{% include "partials/sidebars/admin.html" %}{% endblock %}
+{% block topbar_title %}Административная аналитика{% endblock %}
+{% block breadcrumbs %}
+  <a href="/dashboard/admin/">Кабинет администратора</a> / Аналитика
+{% endblock %}
+
+{% block content %}
+  <div class="section-header">
+    <h4 class="mb-0">Административная аналитика</h4>
+  </div>
+
+  <div class="card mb-3">
+    <form class="filters" method="get">
+      <input class="form-control" type="date" name="from" value="{{ period_from|date:'Y-m-d' }}">
+      <input class="form-control" type="date" name="to" value="{{ period_to|date:'Y-m-d' }}">
+      <button class="btn btn-outline-secondary" type="submit">Показать</button>
+      <div class="dropdown">
+        <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+          Сформировать отчёт
+        </button>
+        <ul class="dropdown-menu">
+          {% for fmt in report_formats %}
+            <li>
+              <a class="dropdown-item" href="/admin-panel/analytics/export/?format={{ fmt }}&from={{ period_from|date:'Y-m-d' }}&to={{ period_to|date:'Y-m-d' }}">
+                {{ fmt|upper }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </form>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.users }}</div>
+        <div class="kpi-label">Пользователей</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.orders }}</div>
+        <div class="kpi-label">Заказов</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.revenue }}</div>
+        <div class="kpi-label">Выручка</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.delivery_success_rate }}%</div>
+        <div class="kpi-label">Успешность доставок</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.clients }}</div>
+        <div class="kpi-label">Клиентов</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.routes }}</div>
+        <div class="kpi-label">Маршрутов</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.couriers }}</div>
+        <div class="kpi-label">Курьеров</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi-card">
+        <div class="kpi-value">{{ payload.summary.reports }}</div>
+        <div class="kpi-label">Отчётов</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="section-header"><h6 class="mb-0">Заказы по статусам</h6></div>
+        <div class="table-responsive">
+          <table class="table mb-0">
+            <thead><tr><th>Статус</th><th>Количество</th></tr></thead>
+            <tbody>
+              {% for row in payload.sections.orders_by_status %}
+                <tr><td>{{ row.label }}</td><td>{{ row.value }}</td></tr>
+              {% empty %}
+                <tr><td colspan="2" class="text-muted">Нет данных</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="section-header"><h6 class="mb-0">Пользователи по ролям</h6></div>
+        <div class="table-responsive">
+          <table class="table mb-0">
+            <thead><tr><th>Роль</th><th>Пользователи</th></tr></thead>
+            <tbody>
+              {% for row in payload.sections.users_by_role %}
+                <tr><td>{{ row.label }}</td><td>{{ row.value }}</td></tr>
+              {% empty %}
+                <tr><td colspan="2" class="text-muted">Нет данных</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="section-header"><h6 class="mb-0">Топ клиентов</h6></div>
+        <div class="table-responsive">
+          <table class="table mb-0">
+            <thead><tr><th>Клиент</th><th>Заказы</th><th>Выручка</th></tr></thead>
+            <tbody>
+              {% for row in payload.sections.top_clients %}
+                <tr><td>{{ row.label }}</td><td>{{ row.orders }}</td><td>{{ row.revenue }}</td></tr>
+              {% empty %}
+                <tr><td colspan="3" class="text-muted">Нет данных</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="section-header"><h6 class="mb-0">Доставки по статусам</h6></div>
+        <div class="table-responsive">
+          <table class="table mb-0">
+            <thead><tr><th>Статус</th><th>Количество</th></tr></thead>
+            <tbody>
+              {% for row in payload.sections.deliveries_by_status %}
+                <tr><td>{{ row.label }}</td><td>{{ row.value }}</td></tr>
+              {% empty %}
+                <tr><td colspan="2" class="text-muted">Нет данных</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,152 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Times New Roman;}}
+\fs28
+\pard\qc\b Приложение А. Код программы\b0\par
+\par
+\pard\qj В приложении приведены основные фрагменты программного кода CRM-системы ООО \ldblquote АРТ КУЛИНАРИЯ\rdblquote , отражающие маршрутизацию проекта, описание ключевой сущности клиента, обработку клиентских данных и API-интерфейс.\par
+\par
+\pard\qc\b Маршрутизация проекта\b0\par
+\pard\b Файл: factory_crm/urls.py\b0\par
+\pard\ql\fs22 from django.urls import path, include\par
+from rest_framework.routers import DefaultRouter\par
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView\par
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView\par
+from django.conf import settings\par
+from django.conf.urls.static import static\par
+\par
+from crm import api\par
+from orders import views as order_views\par
+\par
+router = DefaultRouter()\par
+router.register(r"roles", api.RoleViewSet)\par
+router.register(r"users", api.UserViewSet)\par
+router.register(r"clients", api.ClientViewSet)\par
+router.register(r"client-contacts", api.ClientContactViewSet)\par
+router.register(r"orders", api.OrderViewSet)\par
+router.register(r"interactions", api.InteractionViewSet)\par
+\par
+urlpatterns = [\par
+    path("", include("accounts.urls")),\par
+    path("dashboard/", include("dashboard.urls")),\par
+    path("clients/", include("clients.urls")),\par
+    path("orders/", include("orders.urls")),\par
+    path("api/orders/availability/", order_views.order_availability, name="order-availability"),\par
+    path("api/", include(router.urls)),\par
+    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),\par
+    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),\par
+    path("api-auth/", include("rest_framework.urls")),\par
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),\par
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),\par
+]\par
+\par
+if settings.DEBUG:\par
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)\par
+\par
+\fs28\pard\qc\b Модель клиента CRM-системы\b0\par
+\pard\b Файл: crm/models.py\b0\par
+\pard\ql\fs22 from django.db import models\par
+\par
+class ClientType(models.TextChoices):\par
+    STORE = "store", "\u1052?\u1072?\u1075?\u1072?\u1079?\u1080?\u1085?"\par
+    CAFE = "cafe", "\u1050?\u1072?\u1092?\u1077?"\par
+    RESTAURANT = "restaurant", "\u1056?\u1077?\u1089?\u1090?\u1086?\u1088?\u1072?\u1085?"\par
+    DISTRIBUTOR = "distributor", "\u1044?\u1080?\u1089?\u1090?\u1088?\u1080?\u1073?\u1100?\u1102?\u1090?\u1086?\u1088?"\par
+    OTHER = "other", "\u1044?\u1088?\u1091?\u1075?\u1086?\u1077?"\par
+\par
+class ClientStatus(models.TextChoices):\par
+    PROSPECT = "prospect", "\u1055?\u1077?\u1088?\u1077?\u1075?\u1086?\u1074?\u1086?\u1088?\u1099?"\par
+    ACTIVE = "active", "\u1040?\u1082?\u1090?\u1080?\u1074?\u1077?\u1085?"\par
+    PAUSED = "paused", "\u1055?\u1088?\u1080?\u1086?\u1089?\u1090?\u1072?\u1085?\u1086?\u1074?\u1083?\u1077?\u1085?"\par
+    LOST = "lost", "\u1047?\u1072?\u1082?\u1088?\u1099?\u1090?"\par
+\par
+class Client(models.Model):\par
+    name = models.CharField("\u1053?\u1072?\u1079?\u1074?\u1072?\u1085?\u1080?\u1077?", max_length=255)\par
+    client_type = models.CharField("\u1058?\u1080?\u1087?", max_length=32, choices=ClientType.choices, default=ClientType.STORE)\par
+    inn = models.CharField("\u1048?\u1053?\u1053?", max_length=20, blank=True)\par
+    kpp = models.CharField("\u1050?\u1055?\u1055?", max_length=20, blank=True)\par
+    default_delivery_address = models.CharField("\u1040?\u1076?\u1088?\u1077?\u1089? \u1076?\u1086?\u1089?\u1090?\u1072?\u1074?\u1082?\u1080? \u1087?\u1086? \u1091?\u1084?\u1086?\u1083?\u1095?\u1072?\u1085?\u1080?\u1102?", max_length=255, blank=True)\par
+    email = models.EmailField("Email", blank=True)\par
+    phone = models.CharField("\u1058?\u1077?\u1083?\u1077?\u1092?\u1086?\u1085?", max_length=32, blank=True)\par
+    status = models.CharField("\u1057?\u1090?\u1072?\u1090?\u1091?\u1089?", max_length=20, choices=ClientStatus.choices, default=ClientStatus.PROSPECT)\par
+    created_at = models.DateTimeField("\u1057?\u1086?\u1079?\u1076?\u1072?\u1085?", auto_now_add=True, null=True, blank=True)\par
+\par
+    def __str__(self):\par
+        return self.name\par
+\par
+\fs28\pard\qc\b Обработка клиентских данных\b0\par
+\pard\b Файл: clients/views.py\b0\par
+\pard\ql\fs22 from django.shortcuts import render, redirect, get_object_or_404\par
+from django.db.models import Q\par
+from django.contrib import messages\par
+from accounts.utils import roles_required\par
+from crm.models import Client, CooperationStage, ClientStageHistory, Interaction, ClientStatus, Order\par
+from .forms import ClientForm, InteractionForm, StageChangeForm\par
+\par
+@roles_required(["\u1052?\u1077?\u1085?\u1077?\u1076?\u1078?\u1077?\u1088?", "\u1040?\u1076?\u1084?\u1080?\u1085?\u1080?\u1089?\u1090?\u1088?\u1072?\u1090?\u1086?\u1088? \u1089?\u1080?\u1089?\u1090?\u1077?\u1084?\u1099?"])\par
+def client_list(request):\par
+    qs = Client.objects.select_related("current_stage", "responsible_manager").all()\par
+    q = request.GET.get("q")\par
+    status = request.GET.get("status")\par
+    stage = request.GET.get("stage")\par
+    sort = request.GET.get("sort")\par
+    if q:\par
+        qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q))\par
+    if status:\par
+        qs = qs.filter(status=status)\par
+    if stage:\par
+        qs = qs.filter(current_stage_id=stage)\par
+    if sort in ["name", "-name", "created_at", "-created_at"]:\par
+        qs = qs.order_by(sort)\par
+    stages = CooperationStage.objects.filter(is_active=True)\par
+    return render(request, "clients/list.html", \{"clients": qs, "stages": stages, "status_choices": ClientStatus.choices\})\par
+\par
+@roles_required(["\u1052?\u1077?\u1085?\u1077?\u1076?\u1078?\u1077?\u1088?", "\u1040?\u1076?\u1084?\u1080?\u1085?\u1080?\u1089?\u1090?\u1088?\u1072?\u1090?\u1086?\u1088? \u1089?\u1080?\u1089?\u1090?\u1077?\u1084?\u1099?"])\par
+def client_detail(request, pk):\par
+    client = get_object_or_404(Client, pk=pk)\par
+    interactions = Interaction.objects.filter(client=client).select_related("manager")\par
+    stage_history = ClientStageHistory.objects.filter(client=client).select_related("stage", "changed_by")\par
+    client_orders = Order.objects.filter(client=client).order_by("-created_at")\par
+\par
+    interaction_form = InteractionForm(prefix="interaction")\par
+    stage_form = StageChangeForm(prefix="stage", initial=\{"stage": client.current_stage\})\par
+\par
+    return render(request, "clients/detail.html", \{\par
+        "client": client,\par
+        "interactions": interactions,\par
+        "stage_history": stage_history,\par
+        "client_orders": client_orders,\par
+        "interaction_form": interaction_form,\par
+        "stage_form": stage_form,\par
+    \})\par
+\par
+\fs28\pard\qc\b API-модуль CRM-системы\b0\par
+\pard\b Файл: crm/api.py\b0\par
+\pard\ql\fs22 from rest_framework import viewsets, permissions, serializers\par
+from . import models\par
+\par
+class ClientContactSerializer(serializers.ModelSerializer):\par
+    class Meta:\par
+        model = models.ClientContact\par
+        fields = ["id", "client", "full_name", "position", "phone", "email", "is_primary"]\par
+\par
+class ClientSerializer(serializers.ModelSerializer):\par
+    contacts = ClientContactSerializer(many=True, read_only=True)\par
+\par
+    class Meta:\par
+        model = models.Client\par
+        fields = [\par
+            "id", "name", "client_type", "inn", "kpp",\par
+            "default_delivery_address", "email", "phone", "status",\par
+            "current_stage", "responsible_manager", "created_at", "contacts",\par
+        ]\par
+\par
+class BaseAuthViewSet(viewsets.ModelViewSet):\par
+    permission_classes = [permissions.IsAuthenticated]\par
+\par
+class ClientViewSet(BaseAuthViewSet):\par
+    queryset = models.Client.objects.all()\par
+    serializer_class = ClientSerializer\par
+    search_fields = ["name", "inn", "kpp", "email", "phone"]\par
+    filterset_fields = ["client_type", "status", "responsible_manager"]\par
+    ordering_fields = ["name", "status"]\par
+}

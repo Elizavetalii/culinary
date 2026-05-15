@@ -1,12 +1,41 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import models
+from .validators import normalize_russian_phone, validate_inn, validate_kpp
 
 
 # ---------- Serializers ----------
 from rest_framework import serializers  # noqa: E402
+
+
+PHONE_ERROR = "Введите российский номер в формате +7 (999) 123-45-67."
+INN_DIGITS_ERROR = "ИНН должен содержать только цифры."
+INN_LENGTH_ERROR = "ИНН должен состоять из 10 или 12 цифр."
+KPP_DIGITS_ERROR = "КПП должен содержать только цифры."
+KPP_LENGTH_ERROR = "КПП должен состоять из 9 цифр."
+
+
+def _serializer_validation(func, *args):
+    try:
+        return func(*args)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.messages) from exc
+
+
+class RussianPhoneSerializerMixin:
+    def validate_phone(self, value):
+        return _serializer_validation(normalize_russian_phone, value, PHONE_ERROR)
+
+
+class ClientTaxSerializerMixin:
+    def validate_inn(self, value):
+        return _serializer_validation(validate_inn, value, INN_DIGITS_ERROR, INN_LENGTH_ERROR)
+
+    def validate_kpp(self, value):
+        return _serializer_validation(validate_kpp, value, KPP_DIGITS_ERROR, KPP_LENGTH_ERROR)
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -15,7 +44,7 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(RussianPhoneSerializerMixin, serializers.ModelSerializer):
     roles = RoleSerializer(many=True, read_only=True)
 
     class Meta:
@@ -23,13 +52,13 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'full_name', 'email', 'phone', 'roles', 'is_active', 'is_staff']
 
 
-class ClientContactSerializer(serializers.ModelSerializer):
+class ClientContactSerializer(RussianPhoneSerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = models.ClientContact
         fields = ['id', 'client', 'full_name', 'position', 'phone', 'email', 'is_primary']
 
 
-class ClientSerializer(serializers.ModelSerializer):
+class ClientSerializer(ClientTaxSerializerMixin, RussianPhoneSerializerMixin, serializers.ModelSerializer):
     contacts = ClientContactSerializer(many=True, read_only=True)
 
     class Meta:

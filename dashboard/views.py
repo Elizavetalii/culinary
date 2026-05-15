@@ -2,6 +2,7 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.shortcuts import render, redirect
+from django.utils import timezone
 from accounts.utils import role_required
 from crm.models import Client, Order, Delivery, Route, RouteStatus, LogisticianProfile, Courier, CourierStatus
 from reports.models import Report
@@ -9,6 +10,7 @@ from reports.models import Report
 
 @role_required("Менеджер")
 def manager_dashboard(request):
+    today = timezone.localdate()
     stats = {
         "clients": Client.objects.count(),
         "orders": Order.objects.count(),
@@ -16,12 +18,22 @@ def manager_dashboard(request):
             status__in=["На проверке", "Подтвержден производством", "В производстве"]
         ).count(),
     }
+    demo_stats = {
+        "clients_today": Client.objects.filter(created_at__date=today).count(),
+        "orders_today": Order.objects.filter(created_at__date=today).count(),
+        "deliveries_today": Delivery.objects.filter(delivery_date=today).count(),
+    }
     recent_clients = Client.objects.order_by("-id")[:5]
     recent_orders = Order.objects.select_related("client").order_by("-created_at")[:5]
     return render(
         request,
         "dashboard/manager.html",
-        {"stats": stats, "recent_clients": recent_clients, "recent_orders": recent_orders},
+        {
+            "stats": stats,
+            "demo_stats": demo_stats,
+            "recent_clients": recent_clients,
+            "recent_orders": recent_orders,
+        },
     )
 
 
@@ -46,7 +58,14 @@ def logistic_dashboard(request):
     routes_payload = []
     for route in active_routes:
         stops = sorted(route.stops.all(), key=lambda s: s.sequence_index)
-        stop_points = []
+        stop_points = [
+            {
+                "address": getattr(settings, "LOGISTICS_DEPOT_ADDRESS", "Склад"),
+                "lat": float(getattr(settings, "LOGISTICS_DEPOT_LAT", 55.886)),
+                "lng": float(getattr(settings, "LOGISTICS_DEPOT_LNG", 37.442)),
+                "kind": "depot",
+            }
+        ]
         for s in stops:
             address = s.delivery.address or s.delivery.order.address
             stop_points.append(
@@ -54,6 +73,7 @@ def logistic_dashboard(request):
                     "address": address,
                     "lat": float(s.latitude) if s.latitude is not None else None,
                     "lng": float(s.longitude) if s.longitude is not None else None,
+                    "kind": "delivery",
                 }
             )
         routes_payload.append(

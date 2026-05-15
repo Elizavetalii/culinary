@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.db.models import Q
 from django.contrib import messages
 from accounts.utils import roles_required
+from communications.services import entity_comments_context
 from crm.models import Client, CooperationStage, ClientStageHistory, Interaction, ClientStatus, Order
 from .forms import ClientForm, InteractionForm, StageChangeForm
 
@@ -101,17 +102,15 @@ def client_detail(request, pk):
                 messages.success(request, "Этап сотрудничества обновлён.")
                 return redirect(f"/clients/{client.id}/")
 
-    return render(
-        request,
-        "clients/detail.html",
-        {
-            "client": client,
-            "interactions": interactions,
-            "stage_history": stage_history,
-            "client_orders": client_orders,
-            "interaction_form": interaction_form,
-            "stage_form": stage_form,
-        },
-    )
+    context = {
+        "client": client,
+        "interactions": interactions,
+        "stage_history": stage_history,
+        "client_orders": client_orders,
+        "interaction_form": interaction_form,
+        "stage_form": stage_form,
+    }
+    context.update(entity_comments_context(client))
+    return render(request, "clients/detail.html", context)
 
 # Create your views here.

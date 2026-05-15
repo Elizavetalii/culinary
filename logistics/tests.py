@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -14,6 +14,7 @@ from crm.models import (
     CourierAssignment,
     RouteStatus,
 )
+from logistics.forms import DeliveryForm
 
 
 class LogisticsRulesTests(TestCase):
@@ -114,3 +115,41 @@ class LogisticsRulesTests(TestCase):
             {"proof_of_delivery": file, "status": "Доставлено"},
         )
         self.assertEqual(response.status_code, 302)
+
+    @override_settings(LOGISTICS_MAX_PROOF_SIZE_MB=1)
+    def test_courier_proof_size_is_limited(self):
+        route = Route.objects.create(
+            planned_date=timezone.now().date(),
+            logistician=self.logist,
+            status=RouteStatus.PUBLISHED,
+        )
+        CourierAssignment.objects.create(route=route, courier=self.courier)
+        delivery = Delivery.objects.create(
+            order=self.order,
+            status="Запланировано",
+            planned_at=timezone.now(),
+        )
+        stop = RouteStop.objects.create(
+            route=route,
+            delivery=delivery,
+            sequence_index=1,
+            status="Запланирована",
+        )
+        self.client.force_login(self.courier_user)
+        file = SimpleUploadedFile("proof.pdf", b"x" * (1024 * 1024 + 1), content_type="application/pdf")
+        response = self.client.post(
+            f"/logistics/courier/stops/{stop.id}/proof/",
+            {"proof_of_delivery": file, "status": "Доставлено"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Файл слишком большой", status_code=400)
+
+    def test_delivery_form_exposes_all_statuses_checked_by_clean(self):
+        form = DeliveryForm()
+        values = {value for value, _ in form.fields["status"].choices}
+
+        self.assertIn("Не назначено", values)
+        self.assertIn("Запланировано", values)
+        self.assertIn("В пути", values)
+        self.assertIn("Доставлено", values)
+        self.assertIn("Отменено", values)

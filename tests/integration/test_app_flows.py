@@ -150,18 +150,176 @@ class AppIntegrationTests(TestCase):
             {
                 "name": "ООО Новый клиент",
                 "client_type": "store",
-                "inn": "123",
-                "kpp": "456",
-                "default_delivery_address": "СПб",
+                "inn": "1234567890",
+                "kpp": "123456789",
+                "default_delivery_address": "",
+                "address_city": "Санкт-Петербург",
+                "address_street": "Литейный проспект",
+                "address_house": "10",
+                "address_building": "к. 2",
+                "address_unit": "офис 305",
+                "address_comment": "Вход со двора",
                 "email": "new-client@test.local",
-                "phone": "+79991112233",
+                "phone": "8 (999) 111-22-33",
                 "status": "prospect",
                 "current_stage": str(self.stage.id),
             },
             follow=False,
         )
         self.assertEqual(create_resp.status_code, 302)
-        self.assertTrue(Client.objects.filter(email="new-client@test.local").exists())
+        created = Client.objects.get(email="new-client@test.local")
+        self.assertEqual(created.phone, "+79991112233")
+        self.assertEqual(created.responsible_manager, self.manager)
+        self.assertEqual(
+            created.default_delivery_address,
+            "Санкт-Петербург, Литейный проспект, д. 10, к. 2, офис 305. Комментарий курьеру: Вход со двора",
+        )
+
+    def test_client_create_validation_errors_keep_form_data(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            "/clients/create/",
+            {
+                "name": "О",
+                "client_type": "",
+                "inn": "123abc",
+                "kpp": "456",
+                "default_delivery_address": "",
+                "address_city": "",
+                "address_street": "",
+                "address_house": "",
+                "address_building": "к. 1",
+                "address_unit": "офис 2",
+                "address_comment": "Позвонить заранее",
+                "email": "bad-email",
+                "phone": "+7 (999) 111-22",
+                "status": "",
+                "current_stage": "",
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Название должно быть не короче 2 символов.")
+        self.assertContains(response, "Выберите тип клиента.")
+        self.assertContains(response, "ИНН должен содержать только цифры.")
+        self.assertContains(response, "КПП должен состоять из 9 цифр.")
+        self.assertContains(response, "Укажите город или населённый пункт.")
+        self.assertContains(response, "Укажите улицу.")
+        self.assertContains(response, "Укажите дом.")
+        self.assertContains(response, "Позвонить заранее")
+        self.assertContains(response, "Введите корректный email.")
+        self.assertContains(response, "Введите российский номер")
+        self.assertContains(response, "Выберите статус клиента.")
+        self.assertContains(response, "Выберите текущий этап.")
+        self.assertContains(response, "bad-email")
+        self.assertFalse(Client.objects.filter(email="bad-email").exists())
+
+    def test_client_create_rejects_numeric_address_parts(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            "/clients/create/",
+            {
+                "name": "ООО Адрес Тест",
+                "client_type": "store",
+                "inn": "1234567890",
+                "kpp": "123456789",
+                "default_delivery_address": "",
+                "address_city": "4234324",
+                "address_street": "432423423",
+                "address_house": "abc",
+                "address_building": "!!!",
+                "address_unit": "@@@",
+                "address_comment": "Проверка",
+                "email": "address-test@test.local",
+                "phone": "+79991112233",
+                "status": "prospect",
+                "current_stage": str(self.stage.id),
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Город не может состоять только из цифр")
+        self.assertContains(response, "Улица не может состоять только из цифр")
+        self.assertContains(response, "Дом должен содержать номер")
+        self.assertContains(response, "Укажите корпус или строение")
+        self.assertContains(response, "Укажите квартиру или офис")
+        self.assertContains(response, "4234324")
+        self.assertFalse(Client.objects.filter(email="address-test@test.local").exists())
+
+    def test_client_create_accepts_real_address_formats(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            "/clients/create/",
+            {
+                "name": "ООО Валидный Адрес",
+                "client_type": "store",
+                "inn": "1234567890",
+                "kpp": "123456789",
+                "default_delivery_address": "",
+                "address_city": "посёлок Новинки",
+                "address_street": "ул. 1905 года",
+                "address_house": "12 стр 1",
+                "address_building": "корп. 2",
+                "address_unit": "кв. 7Б",
+                "address_comment": "Позвонить за 10 минут",
+                "email": "valid-address@test.local",
+                "phone": "+79991112233",
+                "status": "prospect",
+                "current_stage": str(self.stage.id),
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        created = Client.objects.get(email="valid-address@test.local")
+        self.assertEqual(
+            created.default_delivery_address,
+            "посёлок Новинки, ул. 1905 года, д. 12 стр 1, корп. 2, кв. 7Б. Комментарий курьеру: Позвонить за 10 минут",
+        )
+
+    def test_client_create_validates_client_name_letters(self):
+        self.client.force_login(self.manager)
+        invalid_response = self.client.post(
+            "/clients/create/",
+            {
+                "name": "4234324",
+                "client_type": "store",
+                "inn": "1234567890",
+                "kpp": "123456789",
+                "default_delivery_address": "",
+                "address_city": "Москва",
+                "address_street": "Ленина",
+                "address_house": "12",
+                "email": "numeric-name@test.local",
+                "phone": "+79991112233",
+                "status": "prospect",
+                "current_stage": str(self.stage.id),
+            },
+            follow=False,
+        )
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertContains(invalid_response, "Название должно содержать хотя бы одну букву.")
+        self.assertFalse(Client.objects.filter(email="numeric-name@test.local").exists())
+
+        valid_response = self.client.post(
+            "/clients/create/",
+            {
+                "name": "Точка №5",
+                "client_type": "store",
+                "inn": "1234567890",
+                "kpp": "123456789",
+                "default_delivery_address": "",
+                "address_city": "Москва",
+                "address_street": "Ленина",
+                "address_house": "12",
+                "email": "valid-name@test.local",
+                "phone": "+79991112233",
+                "status": "prospect",
+                "current_stage": str(self.stage.id),
+            },
+            follow=False,
+        )
+        self.assertEqual(valid_response.status_code, 302)
+        self.assertTrue(Client.objects.filter(email="valid-name@test.local", name="Точка №5").exists())
 
     def test_client_detail_interaction_and_stage_history(self):
         self.client.force_login(self.manager)

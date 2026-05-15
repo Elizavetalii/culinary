@@ -14,19 +14,131 @@
 {% endblock %}
 
 {% block content %}
+  <style>
+    .client-form-field.has-error .form-control,
+    .client-form-field.has-error .form-select {
+      border-color: var(--bs-danger);
+    }
+
+    .client-form-field.has-error .form-control:focus,
+    .client-form-field.has-error .form-select:focus {
+      border-color: var(--bs-danger);
+      box-shadow: 0 0 0 .25rem rgba(220, 53, 69, .15);
+    }
+
+    .client-field-error:empty {
+      display: none;
+    }
+
+    .address-preview {
+      border: 1px solid var(--bs-border-color);
+      border-radius: 8px;
+      background: var(--bs-tertiary-bg);
+      min-height: 44px;
+      padding: .65rem .75rem;
+    }
+  </style>
   <div class="card">
-    <form method="post" novalidate>
+    <form method="post" novalidate data-client-form>
       {% csrf_token %}
+      {{ form.default_delivery_address }}
       <div class="row g-3">
-        {% for field in form %}
-          <div class="col-md-6">
-            <label class="form-label">{{ field.label }}</label>
-            {{ field }}
-            {% if field.errors %}
-              <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+        <div class="col-md-6 client-form-field{% if form.name.errors %} has-error{% endif %}" data-field-wrapper="name">
+          <label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+          {{ form.name }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="name">{{ form.name.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.client_type.errors %} has-error{% endif %}" data-field-wrapper="client_type">
+          <label class="form-label" for="{{ form.client_type.id_for_label }}">{{ form.client_type.label }}</label>
+          {{ form.client_type }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="client_type">{{ form.client_type.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.inn.errors %} has-error{% endif %}" data-field-wrapper="inn">
+          <label class="form-label" for="{{ form.inn.id_for_label }}">{{ form.inn.label }}</label>
+          {{ form.inn }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="inn">{{ form.inn.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.kpp.errors %} has-error{% endif %}" data-field-wrapper="kpp">
+          <label class="form-label" for="{{ form.kpp.id_for_label }}">{{ form.kpp.label }}</label>
+          {{ form.kpp }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="kpp">{{ form.kpp.errors|striptags }}</div>
+        </div>
+
+        <div class="col-12">
+          <div class="border-top pt-3 mt-1">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+              <div>
+                <h5 class="mb-1">Адрес доставки по умолчанию</h5>
+                <div class="text-muted small">Структура собирается в старое поле адреса, поэтому заказы и логистика продолжают работать как раньше.</div>
+              </div>
+            </div>
+            {% if form.default_delivery_address.value %}
+              <div class="alert alert-light border small mb-3">
+                Текущий сохранённый адрес: {{ form.default_delivery_address.value }}
+              </div>
             {% endif %}
+            <div class="row g-3" data-address-fields data-suggest-provider="none">
+              <div class="col-md-6 client-form-field{% if form.address_city.errors %} has-error{% endif %}" data-field-wrapper="address_city">
+                <label class="form-label" for="{{ form.address_city.id_for_label }}">{{ form.address_city.label }}</label>
+                {{ form.address_city }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_city">{{ form.address_city.errors|striptags }}</div>
+              </div>
+              <div class="col-md-6 client-form-field{% if form.address_street.errors %} has-error{% endif %}" data-field-wrapper="address_street">
+                <label class="form-label" for="{{ form.address_street.id_for_label }}">{{ form.address_street.label }}</label>
+                {{ form.address_street }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_street">{{ form.address_street.errors|striptags }}</div>
+              </div>
+              <div class="col-md-4 client-form-field{% if form.address_house.errors %} has-error{% endif %}" data-field-wrapper="address_house">
+                <label class="form-label" for="{{ form.address_house.id_for_label }}">{{ form.address_house.label }}</label>
+                {{ form.address_house }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_house">{{ form.address_house.errors|striptags }}</div>
+              </div>
+              <div class="col-md-4 client-form-field{% if form.address_building.errors %} has-error{% endif %}" data-field-wrapper="address_building">
+                <label class="form-label" for="{{ form.address_building.id_for_label }}">{{ form.address_building.label }}</label>
+                {{ form.address_building }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_building">{{ form.address_building.errors|striptags }}</div>
+              </div>
+              <div class="col-md-4 client-form-field{% if form.address_unit.errors %} has-error{% endif %}" data-field-wrapper="address_unit">
+                <label class="form-label" for="{{ form.address_unit.id_for_label }}">{{ form.address_unit.label }}</label>
+                {{ form.address_unit }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_unit">{{ form.address_unit.errors|striptags }}</div>
+              </div>
+              <div class="col-12 client-form-field{% if form.address_comment.errors %} has-error{% endif %}" data-field-wrapper="address_comment">
+                <label class="form-label" for="{{ form.address_comment.id_for_label }}">{{ form.address_comment.label }}</label>
+                {{ form.address_comment }}
+                <div class="text-danger small mt-1 client-field-error" data-field-error="address_comment">{{ form.address_comment.errors|striptags }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Предпросмотр полного адреса</label>
+                <div class="address-preview text-muted" data-address-preview>{{ form.default_delivery_address.value|default:"Заполните город, улицу и дом" }}</div>
+              </div>
+            </div>
           </div>
-        {% endfor %}
+        </div>
+
+        <div class="col-md-6 client-form-field{% if form.email.errors %} has-error{% endif %}" data-field-wrapper="email">
+          <label class="form-label" for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+          {{ form.email }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="email">{{ form.email.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.phone.errors %} has-error{% endif %}" data-field-wrapper="phone">
+          <label class="form-label" for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+          {{ form.phone }}
+          {% if form.phone.help_text %}
+            <div class="form-text">{{ form.phone.help_text }}</div>
+          {% endif %}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="phone">{{ form.phone.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.status.errors %} has-error{% endif %}" data-field-wrapper="status">
+          <label class="form-label" for="{{ form.status.id_for_label }}">{{ form.status.label }}</label>
+          {{ form.status }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="status">{{ form.status.errors|striptags }}</div>
+        </div>
+        <div class="col-md-6 client-form-field{% if form.current_stage.errors %} has-error{% endif %}" data-field-wrapper="current_stage">
+          <label class="form-label" for="{{ form.current_stage.id_for_label }}">{{ form.current_stage.label }}</label>
+          {{ form.current_stage }}
+          <div class="text-danger small mt-1 client-field-error" data-field-error="current_stage">{{ form.current_stage.errors|striptags }}</div>
+        </div>
       </div>
       <div class="d-flex gap-2 mt-4">
         <button class="btn btn-primary">Сохранить</button>
@@ -34,4 +146,282 @@
       </div>
     </form>
   </div>
+
+  <script>
+    (function() {
+      const form = document.querySelector("[data-client-form]");
+      if (!form) return;
+
+      const messages = {
+        name: "Название должно быть не короче 2 символов.",
+        nameLetter: "Название должно содержать хотя бы одну букву.",
+        nameInvalid: "Используйте буквы, цифры, пробелы, кавычки, дефис, точку и №.",
+        client_type: "Выберите тип клиента.",
+        innDigits: "ИНН должен содержать только цифры.",
+        innLength: "ИНН должен состоять из 10 или 12 цифр.",
+        kppDigits: "КПП должен содержать только цифры.",
+        kppLength: "КПП должен состоять из 9 цифр.",
+        addressCity: "Укажите город или населённый пункт.",
+        addressStreet: "Укажите улицу.",
+        addressHouse: "Укажите дом.",
+        addressTooShort: "Слишком короткое значение.",
+        addressCityDigitsOnly: "Город не может состоять только из цифр.",
+        addressCityLetter: "Город должен содержать хотя бы одну букву.",
+        addressCityInvalid: "Используйте буквы, пробелы и дефис.",
+        addressStreetDigitsOnly: "Улица не может состоять только из цифр.",
+        addressStreetLetter: "Улица должна содержать хотя бы одну букву.",
+        addressStreetInvalid: "Используйте буквы, цифры, пробелы, дефис и точку.",
+        addressHouseNumber: "Дом должен содержать номер.",
+        addressHouseInvalid: "Укажите дом в формате 12, 12А, 12/1, 12к2 или 12 стр 1.",
+        addressBuildingInvalid: "Укажите корпус или строение в формате к. 2, корп. 2, стр. 1.",
+        addressUnitInvalid: "Укажите квартиру или офис в формате 15, офис 204 или кв. 7Б.",
+        addressLength: "Полный адрес не должен быть длиннее 255 символов.",
+        email: "Введите корректный email.",
+        phone: "Введите российский номер в формате +7 (999) 123-45-67.",
+        status: "Выберите статус клиента.",
+        current_stage: "Выберите текущий этап."
+      };
+
+      const fields = {
+        name: form.elements.name,
+        client_type: form.elements.client_type,
+        inn: form.elements.inn,
+        kpp: form.elements.kpp,
+        default_delivery_address: form.elements.default_delivery_address,
+        address_city: form.elements.address_city,
+        address_street: form.elements.address_street,
+        address_house: form.elements.address_house,
+        address_building: form.elements.address_building,
+        address_unit: form.elements.address_unit,
+        address_comment: form.elements.address_comment,
+        email: form.elements.email,
+        phone: form.elements.phone,
+        status: form.elements.status,
+        current_stage: form.elements.current_stage
+      };
+      const addressPreview = form.querySelector("[data-address-preview]");
+
+      const onlyDigits = (value) => (value || "").replace(/\D/g, "");
+      const cleanText = (value) => (value || "").trim().replace(/\s+/g, " ");
+      const hasLetter = (value) => /[A-Za-zА-Яа-яЁё]/.test(value);
+      const clientNamePattern = /^[A-Za-zА-Яа-яЁё0-9\s"'«»„“”\-.№]+$/;
+      const cityPattern = /^[A-Za-zА-Яа-яЁё\s-]+$/;
+      const streetPattern = /^[A-Za-zА-Яа-яЁё0-9\s.-]+$/;
+      const housePattern = /^[0-9]+[A-Za-zА-Яа-яЁё]?(?:\/[0-9]+)?(?:\s*(?:к|корп|корп\.|стр|стр\.|строение)\s*[0-9A-Za-zА-Яа-яЁё]+)?$/i;
+      const buildingPattern = /^(?:к\.?|корп\.?|корпус|стр\.?|строение)\s*[0-9A-Za-zА-Яа-яЁё-]+$/i;
+      const unitPattern = /^(?:[0-9A-Za-zА-Яа-яЁё-]+|(?:кв\.?|квартира|офис|пом\.?|помещение)\s*[0-9A-Za-zА-Яа-яЁё-]+)$/i;
+
+      const normalizePhoneDigits = (value) => {
+        let digits = onlyDigits(value);
+        if (digits.length === 11 && digits[0] === "8") {
+          digits = "7" + digits.slice(1);
+        } else if (digits.length === 10) {
+          digits = "7" + digits;
+        }
+        return digits;
+      };
+
+      const formatPhone = (value) => {
+        const normalized = normalizePhoneDigits(value).slice(0, 11);
+        let local = normalized;
+        if (local[0] === "7") local = local.slice(1);
+        const p1 = local.slice(0, 3);
+        const p2 = local.slice(3, 6);
+        const p3 = local.slice(6, 8);
+        const p4 = local.slice(8, 10);
+        let result = "+7";
+        if (p1) result += " (" + p1;
+        if (p1.length === 3) result += ")";
+        if (p2) result += " " + p2;
+        if (p3) result += "-" + p3;
+        if (p4) result += "-" + p4;
+        return result;
+      };
+
+      const buildAddress = () => {
+        const city = cleanText(fields.address_city.value);
+        const street = cleanText(fields.address_street.value);
+        const house = cleanText(fields.address_house.value);
+        const building = cleanText(fields.address_building.value);
+        const unit = cleanText(fields.address_unit.value);
+        const comment = cleanText(fields.address_comment.value);
+        const chunks = [city, street, house ? `д. ${house}` : "", building, unit].filter(Boolean);
+        let fullAddress = chunks.join(", ");
+        if (comment) {
+          fullAddress = fullAddress ? `${fullAddress}. Комментарий курьеру: ${comment}` : comment;
+        }
+        return fullAddress;
+      };
+
+      const updateAddressPreview = () => {
+        const fullAddress = buildAddress();
+        if (addressPreview) {
+          addressPreview.textContent = fullAddress || fields.default_delivery_address.value || "Заполните город, улицу и дом";
+          addressPreview.classList.toggle("text-muted", !fullAddress);
+        }
+        if (fullAddress) {
+          fields.default_delivery_address.value = fullAddress;
+        }
+        return fullAddress;
+      };
+
+      const setError = (name, message) => {
+        const wrapper = form.querySelector(`[data-field-wrapper="${name}"]`);
+        const error = form.querySelector(`[data-field-error="${name}"]`);
+        const field = fields[name];
+        if (!wrapper || !error || !field) return;
+        wrapper.classList.toggle("has-error", Boolean(message));
+        field.classList.toggle("is-invalid", Boolean(message));
+        error.textContent = message || "";
+      };
+
+      const validateCity = (value, required) => {
+        const city = cleanText(value);
+        if (!city) return required ? messages.addressCity : "";
+        if (city.length < 2) return messages.addressTooShort;
+        if (/^\d+$/.test(city)) return messages.addressCityDigitsOnly;
+        if (!hasLetter(city)) return messages.addressCityLetter;
+        if (!cityPattern.test(city)) return messages.addressCityInvalid;
+        return "";
+      };
+
+      const validateClientName = (value) => {
+        const clientName = cleanText(value);
+        if (clientName.length < 2) return messages.name;
+        if (!hasLetter(clientName)) return messages.nameLetter;
+        if (!clientNamePattern.test(clientName)) return messages.nameInvalid;
+        return "";
+      };
+
+      const validateStreet = (value, required) => {
+        const street = cleanText(value);
+        if (!street) return required ? messages.addressStreet : "";
+        if (street.length < 2) return messages.addressTooShort;
+        if (/^\d+$/.test(street)) return messages.addressStreetDigitsOnly;
+        if (!hasLetter(street)) return messages.addressStreetLetter;
+        if (!streetPattern.test(street)) return messages.addressStreetInvalid;
+        return "";
+      };
+
+      const validateHouse = (value, required) => {
+        const house = cleanText(value);
+        if (!house) return required ? messages.addressHouse : "";
+        if (!/\d/.test(house)) return messages.addressHouseNumber;
+        if (!housePattern.test(house)) return messages.addressHouseInvalid;
+        return "";
+      };
+
+      const validateBuilding = (value) => {
+        const building = cleanText(value);
+        if (!building) return "";
+        return buildingPattern.test(building) ? "" : messages.addressBuildingInvalid;
+      };
+
+      const validateUnit = (value) => {
+        const unit = cleanText(value);
+        if (!unit) return "";
+        return unitPattern.test(unit) ? "" : messages.addressUnitInvalid;
+      };
+
+      const validate = () => {
+        let valid = true;
+        const add = (name, message) => {
+          setError(name, message);
+          if (message) valid = false;
+        };
+
+        const name = fields.name.value.trim();
+        const inn = fields.inn.value.trim();
+        const kpp = fields.kpp.value.trim();
+        const email = fields.email.value.trim();
+        const phone = fields.phone.value.trim();
+        const phoneDigits = normalizePhoneDigits(phone);
+        const fullAddress = updateAddressPreview();
+        const hasStructuredAddress = [
+          fields.address_city,
+          fields.address_street,
+          fields.address_house,
+          fields.address_building,
+          fields.address_unit,
+          fields.address_comment
+        ].some((field) => cleanText(field.value));
+        const existingAddress = cleanText(fields.default_delivery_address.value);
+
+        add("name", validateClientName(name));
+        add("client_type", fields.client_type.value ? "" : messages.client_type);
+        add("inn", !inn ? "" : (!/^\d+$/.test(inn) ? messages.innDigits : (![10, 12].includes(inn.length) ? messages.innLength : "")));
+        add("kpp", !kpp ? "" : (!/^\d+$/.test(kpp) ? messages.kppDigits : (kpp.length !== 9 ? messages.kppLength : "")));
+        add("address_city", validateCity(fields.address_city.value, hasStructuredAddress || !existingAddress));
+        add("address_street", validateStreet(fields.address_street.value, hasStructuredAddress || !existingAddress));
+        add("address_house", validateHouse(fields.address_house.value, hasStructuredAddress || !existingAddress));
+        add("address_building", validateBuilding(fields.address_building.value));
+        add("address_unit", validateUnit(fields.address_unit.value));
+        add("address_comment", fullAddress.length <= 255 ? "" : messages.addressLength);
+        add("email", !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? "" : messages.email);
+        add("phone", !phone || (phoneDigits.length === 11 && phoneDigits.startsWith("7")) ? "" : messages.phone);
+        add("status", fields.status.value ? "" : messages.status);
+        add("current_stage", fields.current_stage.value ? "" : messages.current_stage);
+
+        return valid;
+      };
+
+      if (fields.phone) {
+        fields.phone.addEventListener("input", () => {
+          fields.phone.value = formatPhone(fields.phone.value);
+          setError("phone", "");
+        });
+        fields.phone.addEventListener("blur", () => {
+          if (fields.phone.value.trim()) {
+            fields.phone.value = formatPhone(fields.phone.value);
+          }
+        });
+      }
+
+      const limitDigits = (field, maxLength) => {
+        if (!field) return;
+        field.addEventListener("input", () => {
+          field.value = onlyDigits(field.value).slice(0, maxLength);
+          setError(field.name, "");
+        });
+      };
+
+      limitDigits(fields.inn, 12);
+      limitDigits(fields.kpp, 9);
+
+      [
+        fields.address_city,
+        fields.address_street,
+        fields.address_house,
+        fields.address_building,
+        fields.address_unit,
+        fields.address_comment
+      ].forEach((field) => {
+        if (!field) return;
+        field.addEventListener("input", () => {
+          updateAddressPreview();
+          setError(field.name, "");
+        });
+      });
+      updateAddressPreview();
+
+      Object.values(fields).forEach((field) => {
+        if (!field) return;
+        field.addEventListener("input", () => setError(field.name, ""));
+        field.addEventListener("change", () => setError(field.name, ""));
+      });
+
+      form.addEventListener("submit", (event) => {
+        if (!validate()) {
+          event.preventDefault();
+          const firstInvalid = form.querySelector(".is-invalid");
+          if (firstInvalid) firstInvalid.focus();
+          return;
+        }
+        updateAddressPreview();
+        if (fields.phone && fields.phone.value.trim()) {
+          fields.phone.value = "+" + normalizePhoneDigits(fields.phone.value);
+        }
+      });
+    })();
+  </script>
 {% endblock %}

@@ -1,10 +1,16 @@
+from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.db.models import Sum, Count
-from django.db.models.functions import TruncDate
 from django.utils import timezone
 from accounts.utils import roles_required
 from .models import Report
 from .forms import ReportForm
+from .services import (
+    SUPPORTED_REPORT_FORMATS,
+    build_analytics_report,
+    create_analytics_report_file,
+    parse_period,
+)
 from crm.models import Order, OrderStatus, Client
 
 
@@ -66,9 +72,9 @@ def analytics_view(request):
     client_id = request.GET.get("client")
     qs = Order.objects.all()
     if date_from:
-        qs = qs.filter(created_at__date__gte=date_from)
+        qs = qs.filter(delivery_date__gte=date_from)
     if date_to:
-        qs = qs.filter(created_at__date__lte=date_to)
+        qs = qs.filter(delivery_date__lte=date_to)
     if status:
         qs = qs.filter(status=status)
     if client_id:
@@ -89,14 +95,13 @@ def analytics_view(request):
         for row in raw_status
     ]
     by_day = (
-        qs.annotate(day=TruncDate("created_at"))
-        .values("day")
+        qs.values("delivery_date")
         .annotate(cnt=Count("id"), revenue=Sum("total_amount"))
-        .order_by("day")
+        .order_by("delivery_date")
     )
     by_day = [
         {
-            "day": row["day"].strftime("%Y-%m-%d") if row["day"] else "",
+            "day": row["delivery_date"].strftime("%Y-%m-%d") if row["delivery_date"] else "",
             "cnt": row["cnt"],
             "revenue": float(row["revenue"] or 0),
         }
@@ -136,6 +141,15 @@ def analytics_view(request):
         for row in by_client_type
     ]
     clients = Client.objects.all()
+    period_from, period_to = parse_period(date_from, date_to)
+    analytics_payload = build_analytics_report(
+        "manager",
+        period_from=period_from,
+        period_to=period_to,
+        user=request.user,
+        client_id=client_id,
+        status=status,
+    )
     context = {
         "total_orders": total_orders,
         "revenue": revenue,
@@ -148,7 +162,31 @@ def analytics_view(request):
         "today": timezone.now().date(),
         "clients": clients,
         "statuses": OrderStatus.choices,
+        "analytics_payload": analytics_payload,
+        "report_formats": SUPPORTED_REPORT_FORMATS,
+        "period_from": period_from,
+        "period_to": period_to,
     }
     return render(request, "reports/analytics.html", context)
+
+
+@roles_required(["Менеджер", "Администратор системы"])
+def analytics_export(request):
+    fmt = request.GET.get("format", "html").lower()
+    if fmt not in SUPPORTED_REPORT_FORMATS:
+        messages.error(request, "Неподдерживаемый формат отчёта.")
+        return redirect("/reports/analytics/")
+    period_from, period_to = parse_period(request.GET.get("from"), request.GET.get("to"))
+    report = create_analytics_report_file(
+        "manager",
+        fmt,
+        period_from,
+        period_to,
+        user=request.user,
+        client_id=request.GET.get("client") or None,
+        status=request.GET.get("status") or None,
+    )
+    messages.success(request, f"Отчёт сформирован: {report.title}.")
+    return redirect(report.file.url)
 
 # Create your views here.

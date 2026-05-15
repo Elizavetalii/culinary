@@ -1,6 +1,7 @@
 import os
-import shutil
+import subprocess
 from datetime import datetime
+from pathlib import Path
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import IntegrityError, connection, transaction
@@ -12,14 +13,60 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from accounts.utils import role_required
 from crm.models import Role, Client, Order, Delivery
+from reports.services import (
+    SUPPORTED_REPORT_FORMATS,
+    build_analytics_report,
+    create_analytics_report_file,
+    parse_period,
+)
 from .models import Backup, BackupSchedule
-from .forms import UserCreateForm, UserUpdateForm, UserPasswordForm, RoleForm, BackupScheduleForm
+from .forms import UserCreateForm, UserUpdateForm, UserPasswordForm, RoleForm, BackupScheduleForm, BackupCreateForm
 from django.contrib.auth import get_user_model
 from django.contrib import messages
 from .entity_config import ENTITIES, EntityConfig
 from crm.forms import BootstrapFormMixin
+from crm.validators import (
+    format_russian_phone_for_display,
+    normalize_russian_phone,
+    validate_inn,
+    validate_kpp,
+    validate_optional_email,
+)
 
 User = get_user_model()
+
+
+def _default_backup_dir() -> Path:
+    return Path(settings.MEDIA_ROOT) / "backups"
+
+
+def _resolve_backup_dir(raw_dir: str) -> Path:
+    if not raw_dir:
+        return _default_backup_dir()
+    path = Path(raw_dir).expanduser()
+    if path.is_absolute():
+        return path
+    resolved = (Path(settings.MEDIA_ROOT) / path).resolve()
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    if media_root not in [resolved, *resolved.parents]:
+        raise ValueError("Относительный путь должен находиться внутри media.")
+    return resolved
+
+
+def _stored_backup_path(file_path: Path) -> str:
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    resolved_file = file_path.resolve()
+    try:
+        return str(resolved_file.relative_to(media_root))
+    except ValueError:
+        return str(resolved_file)
+
+
+def _backup_file_path(backup: Backup) -> Path:
+    path = Path(backup.file_path)
+    if path.is_absolute():
+        return path
+    return Path(settings.MEDIA_ROOT) / path
 
 
 def _cleanup_legacy_user_refs(user_id: int) -> None:
@@ -28,10 +75,48 @@ def _cleanup_legacy_user_refs(user_id: int) -> None:
     but are not represented by installed models (e.g. django_admin_log).
     """
     with connection.cursor() as cursor:
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = {row[0] for row in cursor.fetchall()}
+        tables = set(connection.introspection.table_names(cursor))
         if "django_admin_log" in tables:
             cursor.execute("DELETE FROM django_admin_log WHERE user_id = %s", [user_id])
+
+
+def _user_business_links(user):
+    checks = [
+        ("clients", "клиенты"),
+        ("changed_stages", "изменения этапов клиентов"),
+        ("interactions", "взаимодействия с клиентами"),
+        ("created_dishes", "созданные блюда"),
+        ("approved_tech_cards", "утвержденные техкарты"),
+        ("orders", "заказы"),
+        ("picking_sessions", "сессии сборки"),
+        ("routes", "маршруты"),
+        ("uploaded_delivery_proofs", "загруженные документы доставки"),
+        ("reviewed_delivery_proofs", "проверенные документы доставки"),
+        ("audit_actions", "записи аудита"),
+        ("sent_direct_messages", "отправленные сообщения"),
+        ("received_direct_messages", "полученные сообщения"),
+        ("entity_comments", "комментарии"),
+        ("report_set", "отчеты"),
+        ("backup_set", "резервные копии"),
+    ]
+    links = []
+    for related_name, label in checks:
+        manager = getattr(user, related_name, None)
+        if manager is None:
+            continue
+        count = manager.count()
+        if count:
+            links.append(f"{label}: {count}")
+    for attr, label in [
+        ("logistic_profile", "профиль логиста"),
+        ("courier_profile", "профиль курьера"),
+    ]:
+        try:
+            getattr(user, attr)
+        except Exception:
+            continue
+        links.append(label)
+    return links
 
 
 @role_required("Администратор системы")
@@ -92,6 +177,16 @@ def user_delete(request, pk):
         if request.user.pk == user.pk:
             messages.error(request, "Нельзя удалить текущего авторизованного пользователя.")
             return redirect("/admin-panel/users/")
+        links = _user_business_links(user)
+        if links:
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+            messages.error(
+                request,
+                "Пользователь связан с данными системы и не может быть удалён. "
+                "Учетная запись деактивирована. Связи: " + "; ".join(links[:5]) + ("." if len(links) <= 5 else " и др."),
+            )
+            return redirect("/admin-panel/users/")
         try:
             with transaction.atomic():
                 _cleanup_legacy_user_refs(user.pk)
@@ -149,41 +244,113 @@ def backup_list(request):
     schedule = BackupSchedule.objects.first()
     backups = []
     for b in qs:
+        backup_path = _backup_file_path(b)
         try:
-            size = os.path.getsize(b.file_path) if os.path.exists(b.file_path) else 0
+            size = os.path.getsize(backup_path) if os.path.exists(backup_path) else 0
         except OSError:
             size = 0
         backups.append({"obj": b, "size": size})
-    return render(request, "admin_panel/backups.html", {"backups": backups, "schedule": schedule})
+    return render(
+        request,
+        "admin_panel/backups.html",
+        {"backups": backups, "schedule": schedule, "create_form": BackupCreateForm()},
+    )
 
 
 @role_required("Администратор системы")
 def backup_create(request):
-    db_path = settings.DATABASES["default"]["NAME"]
-    if not db_path or not os.path.exists(db_path):
-        messages.error(request, "Файл базы данных не найден.")
+    if request.method != "POST":
         return redirect("/admin-panel/backups/")
-    os.makedirs(settings.MEDIA_ROOT / "backups", exist_ok=True)
+    form = BackupCreateForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Проверьте каталог для бэкапа.")
+        return redirect("/admin-panel/backups/")
+    db_settings = settings.DATABASES["default"]
+    if db_settings["ENGINE"] != "django.db.backends.postgresql":
+        messages.error(request, "Резервное копирование поддерживает только PostgreSQL.")
+        return redirect("/admin-panel/backups/")
+    try:
+        backup_dir = _resolve_backup_dir(form.cleaned_data["destination_dir"])
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("/admin-panel/backups/")
+    os.makedirs(backup_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = settings.MEDIA_ROOT / "backups" / f"backup_{ts}.sqlite3"
-    shutil.copy2(db_path, dest)
-    Backup.objects.create(file_path=str(dest), created_by=request.user, status="created")
+    dest = backup_dir / f"backup_{ts}.sql"
+    command = [
+        "pg_dump",
+        "-h",
+        str(db_settings.get("HOST") or "localhost"),
+        "-p",
+        str(db_settings.get("PORT") or "5432"),
+        "-U",
+        str(db_settings.get("USER") or ""),
+        "-d",
+        str(db_settings.get("NAME") or ""),
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--exclude-table-data=admin_panel_backup",
+        "-f",
+        str(dest),
+    ]
+    env = os.environ.copy()
+    if db_settings.get("PASSWORD"):
+        env["PGPASSWORD"] = str(db_settings["PASSWORD"])
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, env=env)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        message = getattr(exc, "stderr", "") or str(exc)
+        messages.error(request, f"Не удалось создать PostgreSQL-бэкап: {message}")
+        return redirect("/admin-panel/backups/")
+    Backup.objects.create(file_path=_stored_backup_path(dest), created_by=request.user, status="created")
     messages.success(request, "Резервная копия создана.")
     return redirect("/admin-panel/backups/")
 
 
+@transaction.non_atomic_requests
 @role_required("Администратор системы")
 def backup_restore(request, pk):
     backup = get_object_or_404(Backup, pk=pk)
-    db_path = settings.DATABASES["default"]["NAME"]
     if request.method == "POST":
-        if os.path.exists(backup.file_path) and db_path:
-            shutil.copy2(backup.file_path, db_path)
-            backup.status = "restored"
-            backup.save(update_fields=["status"])
-            messages.success(request, "Резервная копия восстановлена.")
-        else:
+        db_settings = settings.DATABASES["default"]
+        backup_path = _backup_file_path(backup)
+        if not os.path.exists(backup_path):
             messages.error(request, "Файл резервной копии не найден.")
+        elif db_settings["ENGINE"] != "django.db.backends.postgresql":
+            messages.error(request, "Восстановление поддерживает только PostgreSQL.")
+        else:
+            connection.close()
+            command = [
+                "psql",
+                "-h",
+                str(db_settings.get("HOST") or "localhost"),
+                "-p",
+                str(db_settings.get("PORT") or "5432"),
+                "-U",
+                str(db_settings.get("USER") or ""),
+                "-d",
+                str(db_settings.get("NAME") or ""),
+                "-f",
+                str(backup_path),
+            ]
+            env = os.environ.copy()
+            if db_settings.get("PASSWORD"):
+                env["PGPASSWORD"] = str(db_settings["PASSWORD"])
+            try:
+                subprocess.run(command, check=True, capture_output=True, text=True, env=env)
+            except (OSError, subprocess.CalledProcessError) as exc:
+                connection.connect()
+                Backup.objects.filter(pk=backup.pk).update(status="failed")
+                message = getattr(exc, "stderr", "") or str(exc)
+                messages.error(request, f"Не удалось восстановить PostgreSQL-бэкап: {message}")
+                return redirect("/admin-panel/backups/")
+            connection.connect()
+            updated = Backup.objects.filter(pk=backup.pk).update(status="restored")
+            if not updated:
+                Backup.objects.create(file_path=backup.file_path, created_by=None, status="restored")
+            messages.success(request, "Резервная копия восстановлена.")
     return redirect("/admin-panel/backups/")
 
 
@@ -230,6 +397,35 @@ def data_check(request):
         if not report["errors"] and not report["warnings"]:
             report["warnings"].append("Критичных проблем не найдено.")
     return render(request, "admin_panel/data_check.html", {"report": report})
+
+
+@role_required("Администратор системы")
+def admin_analytics(request):
+    period_from, period_to = parse_period(request.GET.get("from"), request.GET.get("to"))
+    payload = build_analytics_report("admin", period_from=period_from, period_to=period_to, user=request.user)
+    return render(
+        request,
+        "admin_panel/analytics.html",
+        {
+            "payload": payload,
+            "report_formats": SUPPORTED_REPORT_FORMATS,
+            "period_from": period_from,
+            "period_to": period_to,
+        },
+    )
+
+
+@role_required("Администратор системы")
+def admin_analytics_export(request):
+    fmt = request.GET.get("format", "html").lower()
+    if fmt not in SUPPORTED_REPORT_FORMATS:
+        messages.error(request, "Неподдерживаемый формат отчёта.")
+        return redirect("/admin-panel/analytics/")
+    period_from, period_to = parse_period(request.GET.get("from"), request.GET.get("to"))
+    report = create_analytics_report_file("admin", fmt, period_from, period_to, user=request.user)
+    messages.success(request, f"Отчёт сформирован: {report.title}.")
+    return redirect(report.file.url)
+
 
 def _get_entity(slug: str) -> EntityConfig:
     for entity in ENTITIES:
@@ -304,11 +500,36 @@ def _entity_form_class(model, exclude_fields=None):
     )
 
     class EntityForm(BootstrapFormMixin, forms.ModelForm):
+        error_messages = {
+            "inn_digits": "ИНН должен содержать только цифры.",
+            "inn_length": "ИНН должен состоять из 10 или 12 цифр.",
+            "kpp_digits": "КПП должен содержать только цифры.",
+            "kpp_length": "КПП должен состоять из 9 цифр.",
+            "email_invalid": "Введите корректный email.",
+            "phone_invalid": "Введите российский номер в формате +7 (999) 123-45-67.",
+        }
         Meta = meta_class
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self._init_bootstrap()
+            if "phone" in self.fields:
+                self.fields["phone"].widget.attrs.update(
+                    {
+                        "placeholder": "+7 (___) ___-__-__",
+                        "autocomplete": "tel",
+                        "inputmode": "tel",
+                    }
+                )
+                self.fields["phone"].help_text = "Можно ввести через 8 или +7."
+                if not self.is_bound and self.instance and getattr(self.instance, "phone", ""):
+                    self.initial["phone"] = format_russian_phone_for_display(self.instance.phone)
+            if "email" in self.fields:
+                self.fields["email"].error_messages["invalid"] = self.error_messages["email_invalid"]
+            if "inn" in self.fields:
+                self.fields["inn"].widget.attrs.update({"inputmode": "numeric", "maxlength": "12", "pattern": r"\d{10}|\d{12}"})
+            if "kpp" in self.fields:
+                self.fields["kpp"].widget.attrs.update({"inputmode": "numeric", "maxlength": "9", "pattern": r"\d{9}"})
             for field in self.fields.values():
                 if isinstance(field.widget, forms.Textarea):
                     field.widget.attrs.setdefault("rows", 3)
@@ -317,6 +538,26 @@ def _entity_form_class(model, exclude_fields=None):
                     field.widget.attrs.setdefault("type", "date")
                 if isinstance(field, forms.DateTimeField):
                     field.widget.attrs.setdefault("type", "datetime-local")
+
+        def clean_phone(self):
+            return normalize_russian_phone(self.cleaned_data.get("phone"), self.error_messages["phone_invalid"])
+
+        def clean_inn(self):
+            return validate_inn(
+                self.cleaned_data.get("inn"),
+                self.error_messages["inn_digits"],
+                self.error_messages["inn_length"],
+            )
+
+        def clean_kpp(self):
+            return validate_kpp(
+                self.cleaned_data.get("kpp"),
+                self.error_messages["kpp_digits"],
+                self.error_messages["kpp_length"],
+            )
+
+        def clean_email(self):
+            return validate_optional_email(self.cleaned_data.get("email"), self.error_messages["email_invalid"])
 
     return EntityForm
 

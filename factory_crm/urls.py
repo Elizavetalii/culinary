@@ -37,6 +37,8 @@ urlpatterns = [
     path("logistics/", include("logistics.urls")),
     path("reports/", include("reports.urls")),
     path("admin-panel/", include("admin_panel.urls")),
+    path("chat/", include("communications.urls")),
+    path("", include("portal.urls")),
     path("api/orders/availability/", order_views.order_availability, name="order-availability"),
     path("api/", include(router.urls)),
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Диалог{% endblock %}
+{% block topbar_title %}Диалог{% endblock %}
+{% block breadcrumbs %}
+  <a href="/chat/">Чат</a> / {{ other.full_name|default:other.username }}
+{% endblock %}
+
+{% block content %}
+  <div class="section-header">
+    <h4 class="mb-0">{{ other.full_name|default:other.username }}</h4>
+    <a href="/chat/" class="btn btn-outline-secondary">К диалогам</a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card">
+        <div id="chat-messages" class="d-flex flex-column gap-2 mb-3" data-messages-url="/chat/{{ other.id }}/messages/">
+          {% for message in messages_list %}
+            <div class="p-3 rounded border {% if message.sender_id == request.user.id %}ms-auto{% else %}me-auto{% endif %}" style="max-width: 72%; background: var(--bg-2);">
+              <div class="small text-muted mb-1">{{ message.sender.full_name|default:message.sender.username }} · {{ message.created_at|date:"d.m.Y H:i" }}</div>
+              <div>{{ message.body|linebreaksbr }}</div>
+            </div>
+          {% empty %}
+            <div class="text-muted">Сообщений пока нет.</div>
+          {% endfor %}
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          {{ form.body }}
+          {% if form.body.errors %}<div class="text-danger small mt-1">{{ form.body.errors|striptags }}</div>{% endif %}
+          <button class="btn btn-primary mt-2">Отправить</button>
+        </form>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card">
+        <h6>Сотрудники</h6>
+        <div class="list-group list-group-flush">
+          {% for user in users %}
+            <a class="list-group-item list-group-item-action bg-transparent {% if user.id == other.id %}active{% endif %}" href="/chat/{{ user.id }}/">
+              {{ user.full_name|default:user.username }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+  <script>
+    (function() {
+      const box = document.getElementById("chat-messages");
+      if (!box) return;
+      const url = box.dataset.messagesUrl;
+      const escapeHtml = (value) => {
+        const div = document.createElement("div");
+        div.textContent = value || "";
+        return div.innerHTML;
+      };
+      const render = (messages) => {
+        if (!messages.length) {
+          box.innerHTML = '<div class="text-muted">Сообщений пока нет.</div>';
+          return;
+        }
+        box.innerHTML = messages.map((message) => {
+          const align = message.is_own ? "ms-auto" : "me-auto";
+          return `
+            <div class="p-3 rounded border ${align}" style="max-width: 72%; background: var(--bg-2);">
+              <div class="small text-muted mb-1">${escapeHtml(message.sender)} · ${escapeHtml(message.created_at)}</div>
+              <div>${escapeHtml(message.body).replace(/\n/g, "<br>")}</div>
+            </div>
+          `;
+        }).join("");
+      };
+      const refresh = async () => {
+        try {
+          const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+          if (!response.ok) return;
+          const data = await response.json();
+          render(data.messages || []);
+        } catch (error) {
+          return;
+        }
+      };
+      window.setInterval(refresh, 15000);
+    })();
+  </script>
+{% endblock %}

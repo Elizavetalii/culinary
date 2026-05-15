@@ -10,10 +10,23 @@
 {% block content %}
   <div class="section-header">
     <h4 class="mb-0">Резервные копии</h4>
-    <div class="d-flex gap-2">
-      <a href="/admin-panel/backups/create/" class="btn btn-primary">Создать бэкап</a>
+    <div class="d-flex gap-2 align-items-start">
       <a href="/admin-panel/backups/schedule/" class="btn btn-outline-secondary">Расписание</a>
     </div>
+  </div>
+
+  <div class="card mb-3">
+    <form method="post" action="/admin-panel/backups/create/" class="row g-2 align-items-end">
+      {% csrf_token %}
+      <div class="col-12 col-lg">
+        <label class="form-label" for="{{ create_form.destination_dir.id_for_label }}">{{ create_form.destination_dir.label }}</label>
+        {{ create_form.destination_dir }}
+        <div class="form-text">{{ create_form.destination_dir.help_text }}</div>
+      </div>
+      <div class="col-12 col-lg-auto">
+        <button class="btn btn-primary w-100">Создать бэкап</button>
+      </div>
+    </form>
   </div>
 
   {% if schedule %}
