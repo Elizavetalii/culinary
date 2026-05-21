@@ -18,7 +18,6 @@ class OrderForm(BootstrapFormMixin, forms.ModelForm):
             "delivery_time",
             "delivery_type",
             "comments",
-            "total_amount",
         ]
         widgets = {
             "delivery_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
@@ -34,10 +33,6 @@ class OrderForm(BootstrapFormMixin, forms.ModelForm):
             self.fields["order_number"].widget.attrs.pop("required", None)
             if not self.instance.pk and not self.instance.order_number:
                 self.fields["order_number"].initial = Order.generate_order_number()
-        if "total_amount" in self.fields:
-            self.fields["total_amount"].widget.attrs.setdefault("readonly", True)
-            self.fields["total_amount"].widget.attrs.setdefault("inputmode", "decimal")
-            self.fields["total_amount"].widget.attrs.setdefault("type", "text")
         if "status" in self.fields:
             allowed = ["Черновик", "На проверке"]
             self.fields["status"].choices = [
@@ -57,9 +52,6 @@ class OrderForm(BootstrapFormMixin, forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        total_amount = cleaned.get("total_amount")
-        if isinstance(total_amount, str):
-            cleaned["total_amount"] = total_amount.replace(",", ".")
         if not cleaned.get("delivery_date"):
             self.add_error("delivery_date", "Укажите дату доставки.")
         else:

@@ -92,44 +92,34 @@ class AdminPanelOrderCreateTests(TestCase):
         UserRole.objects.create(user=self.admin, role=self.admin_role)
         self.client_obj = Client.objects.create(name="ООО Админский клиент")
 
-    def test_admin_order_create_generates_order_number_when_blank(self):
+    def test_admin_panel_order_create_uses_business_order_form(self):
         self.client.force_login(self.admin)
-        delivery_day = timezone.localdate() + timedelta(days=2)
 
-        response = self.client.post(
-            "/admin-panel/entities/orders/create/",
-            {
-                "order_number": "",
-                "client": self.client_obj.pk,
-                "manager": "",
-                "address": "Москва, Тверская, 1",
-                "status": OrderStatus.DRAFT,
-                "delivery_date": delivery_day.isoformat(),
-                "delivery_time": "12:00",
-                "delivery_type": "Разовая",
-                "production_date": "",
-                "production_shift": "",
-                "production_window_start": "",
-                "production_window_end": "",
-                "comments": "",
-                "total_amount": "0.00",
-            },
+        response = self.client.get("/admin-panel/entities/orders/create/")
+
+        self.assertRedirects(response, "/orders/create/")
+
+    def test_admin_order_create_page_has_items_and_hides_internal_fields(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get("/admin-panel/entities/orders/create/", follow=True)
+
+        self.assertContains(response, "Позиции заказа")
+        self.assertContains(response, 'type="date"')
+        self.assertContains(response, 'type="time"')
+        self.assertNotContains(response, "Смена")
+        self.assertNotContains(response, "Окно производства")
+        self.assertNotContains(response, "Сумма итого")
+
+    def test_admin_panel_order_edit_uses_business_order_form(self):
+        self.client.force_login(self.admin)
+        order = Order.objects.create(
+            order_number=Order.generate_order_number(),
+            client=self.client_obj,
+            status=OrderStatus.DRAFT,
+            delivery_date=timezone.localdate() + timedelta(days=2),
         )
 
-        self.assertEqual(response.status_code, 302)
-        order = Order.objects.get(client=self.client_obj)
-        self.assertRegex(order.order_number, r"^ORD-\d{8}-\d{3}$")
+        response = self.client.get(f"/admin-panel/entities/orders/{order.pk}/edit/")
 
-    def test_admin_order_form_uses_order_creation_input_masks(self):
-        form_class = _entity_form_class(Order)
-        form = form_class()
-
-        self.assertFalse(form.fields["order_number"].required)
-        self.assertEqual(form.fields["order_number"].widget.attrs["readonly"], True)
-        self.assertEqual(form.fields["delivery_date"].widget.attrs["type"], "date")
-        self.assertEqual(form.fields["production_date"].widget.attrs["type"], "date")
-        self.assertEqual(form.fields["delivery_time"].widget.attrs["type"], "time")
-        self.assertEqual(form.fields["production_window_start"].widget.attrs["type"], "time")
-        self.assertEqual(form.fields["production_window_end"].widget.attrs["type"], "time")
-        self.assertEqual(form.fields["total_amount"].widget.attrs["readonly"], True)
-        self.assertEqual(form.fields["total_amount"].widget.attrs["inputmode"], "decimal")
+        self.assertRedirects(response, f"/orders/{order.pk}/edit/")

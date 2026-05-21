@@ -430,11 +430,12 @@ def order_list(request):
     )
 
 
-def _order_form_context(form, formset, title, **extra):
+def _order_form_context(form, formset, title, request=None, **extra):
     context = {
         "form": form,
         "formset": formset,
         "title": title,
+        "is_admin": bool(request and request.user.roles.filter(name__iexact="Администратор системы").exists()),
         "clients": Client.objects.all(),
         "dish_prices": {
             d.id: float(d.default_price)
@@ -496,13 +497,13 @@ def _save_order_with_items(request, form, formset, title, success_message, redir
     items = _active_formset_items(formset)
     if not items:
         messages.error(request, "Добавьте хотя бы одну позицию заказа.")
-        return render(request, "orders/form.html", _order_form_context(form, formset, title))
+        return render(request, "orders/form.html", _order_form_context(form, formset, title, request=request))
 
     item_errors = _prepare_order_items(order, items)
     if item_errors:
         for err in item_errors:
             messages.error(request, err)
-        return render(request, "orders/form.html", _order_form_context(form, formset, title))
+        return render(request, "orders/form.html", _order_form_context(form, formset, title, request=request))
 
     errors, warnings, info = _validate_order_capacity(order, items)
     capacity_errors = _validate_dish_capacity(order, items)
@@ -513,7 +514,7 @@ def _save_order_with_items(request, form, formset, title, success_message, redir
         return render(
             request,
             "orders/form.html",
-            _order_form_context(form, formset, title, warnings=warnings, info=info),
+            _order_form_context(form, formset, title, request=request, warnings=warnings, info=info),
         )
 
     with transaction.atomic():
@@ -544,7 +545,7 @@ def order_create(request):
     return render(
         request,
         "orders/form.html",
-        _order_form_context(form, formset, "Новый заказ"),
+        _order_form_context(form, formset, "Новый заказ", request=request),
     )
 
 
@@ -566,7 +567,7 @@ def order_edit(request, pk):
     return render(
         request,
         "orders/form.html",
-        _order_form_context(form, formset, "Редактирование заказа"),
+        _order_form_context(form, formset, "Редактирование заказа", request=request),
     )
 
 

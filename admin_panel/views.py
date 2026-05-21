@@ -740,6 +740,8 @@ def entity_create(request, slug):
     entity = _get_entity(slug)
     if not entity:
         return redirect("/admin-panel/")
+    if entity.model is Order:
+        return redirect("/orders/create/")
     form_class = entity.create_form_class or _entity_form_class(entity.model)
     form = form_class(request.POST or None)
     if request.method == "POST":
@@ -771,6 +773,8 @@ def entity_edit(request, slug, pk):
     entity = _get_entity(slug)
     if not entity:
         return redirect("/admin-panel/")
+    if entity.model is Order:
+        return redirect(f"/orders/{pk}/edit/")
     obj = get_object_or_404(entity.model, pk=pk)
     form_class = entity.edit_form_class or _entity_form_class(entity.model)
     if form_class is UserUpdateForm:
