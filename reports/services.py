@@ -1,7 +1,7 @@
 import csv
 import html
 import io
-import re
+from pathlib import Path
 from datetime import date
 from decimal import Decimal
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -9,6 +9,14 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from django.core.files.base import ContentFile
 from django.db.models import Count, Sum
 from django.utils import timezone
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from crm.models import Client, Courier, Delivery, Order, Role, Route, User
 from reports.models import Report
@@ -255,33 +263,107 @@ def render_report_docx(payload):
     return buffer.getvalue()
 
 
-def _pdf_escape(value):
-    return re.sub(r"([\\()])", r"\\\1", str(value).encode("latin-1", "replace").decode("latin-1"))
+def _pdf_font_name():
+    font_name = "ReportUnicode"
+    if font_name in pdfmetrics.getRegisteredFontNames():
+        return font_name
+
+    candidates = [
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        Path("/Library/Fonts/Arial Unicode.ttf"),
+        Path("/Library/Fonts/Arial.ttf"),
+    ]
+    for path in candidates:
+        if path.exists():
+            pdfmetrics.registerFont(TTFont(font_name, str(path)))
+            return font_name
+    raise RuntimeError("Для PDF-отчётов нужен Unicode-шрифт. Установите fonts-dejavu-core или Liberation Sans.")
+
+
+def _pdf_cell(value, style):
+    return Paragraph(html.escape(_format_decimal(value)), style)
 
 
 def render_report_pdf(payload):
-    lines = [payload["title"], f"Period: {payload['period_from']} - {payload['period_to']}"]
-    lines.extend(" | ".join(_format_decimal(cell) for cell in row) for row in analytics_rows(payload)[1:40])
-    text = " BT /F1 10 Tf 50 780 Td " + " T* ".join(f"({_pdf_escape(line)}) Tj" for line in lines) + " ET"
-    objects = [
-        "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        f"<< /Length {len(text.encode('latin-1'))} >>\nstream\n{text}\nendstream",
+    buffer = io.BytesIO()
+    font_name = _pdf_font_name()
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Title"],
+        fontName=font_name,
+        fontSize=16,
+        leading=20,
+        alignment=TA_CENTER,
+        spaceAfter=8,
+    )
+    meta_style = ParagraphStyle(
+        "ReportMeta",
+        parent=styles["Normal"],
+        fontName=font_name,
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#4b5563"),
+    )
+    header_style = ParagraphStyle(
+        "ReportTableHeader",
+        parent=styles["Normal"],
+        fontName=font_name,
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+    )
+    cell_style = ParagraphStyle(
+        "ReportTableCell",
+        parent=styles["Normal"],
+        fontName=font_name,
+        fontSize=8,
+        leading=10,
+    )
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=payload["title"],
+    )
+    rows = analytics_rows(payload)
+    table_data = [[_pdf_cell(cell, header_style) for cell in rows[0]]]
+    table_data.extend([[_pdf_cell(cell, cell_style) for cell in row] for row in rows[1:]])
+    table = Table(table_data, colWidths=[42 * mm, 62 * mm, 36 * mm, 25 * mm, 36 * mm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ]
+        )
+    )
+    story = [
+        Paragraph(html.escape(payload["title"]), title_style),
+        Paragraph(f"Период: {payload['period_from']} - {payload['period_to']}", meta_style),
+        Spacer(1, 6 * mm),
+        table,
     ]
-    output = io.BytesIO()
-    output.write(b"%PDF-1.4\n")
-    offsets = [0]
-    for idx, obj in enumerate(objects, start=1):
-        offsets.append(output.tell())
-        output.write(f"{idx} 0 obj\n{obj}\nendobj\n".encode("latin-1"))
-    xref = output.tell()
-    output.write(f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode("latin-1"))
-    for offset in offsets[1:]:
-        output.write(f"{offset:010d} 00000 n \n".encode("latin-1"))
-    output.write(f"trailer << /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode("latin-1"))
-    return output.getvalue()
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def render_report(payload, fmt):

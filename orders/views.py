@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_DOWN
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from accounts.utils import roles_required, role_required
@@ -52,6 +54,10 @@ def _apply_production_fields(order):
         order.production_window_end = timezone.datetime.strptime(
             getattr(settings, "PRODUCTION_WINDOW_DAY_END", "18:00"), "%H:%M"
         ).time()
+
+
+def _order_reserves_resources(order):
+    return order.status in RESERVED_STATUSES and bool(order.production_date)
 
 
 def _order_item_weight(item):
@@ -110,9 +116,105 @@ def _get_reserved_qty_map(production_date, exclude_order_id=None):
     return {row["dish_id"]: row["total"] for row in data}
 
 
+def _exclude_order_if_saved(qs, order):
+    if order and order.pk:
+        return qs.exclude(order_id=order.pk)
+    return qs
+
+
+def _to_decimal(value):
+    if value is None:
+        return None
+    return Decimal(str(value))
+
+
+def _round_max_qty(dish, value):
+    if value is None:
+        return None
+    value = max(_to_decimal(value), Decimal("0"))
+    scale = dish.quantity_scale or 0
+    quant = Decimal("1").scaleb(-scale)
+    return value.quantize(quant, rounding=ROUND_DOWN)
+
+
+def _format_qty(value):
+    if value is None:
+        return None
+    return float(value)
+
+
+def _availability_tech_card(dish, client_id=None):
+    if client_id:
+        allowed = (
+            ClientAllowedTechCard.objects.filter(client_id=client_id, tech_card__dish=dish, tech_card__is_active=True)
+            .select_related("tech_card")
+            .first()
+        )
+        if allowed:
+            return allowed.tech_card
+    active = TechCard.objects.filter(dish=dish, is_active=True).order_by("-id")
+    if active.count() == 1:
+        return active.first()
+    return None
+
+
+def _get_dish_availability(dish, production_date, reserved_capacity=0, max_capacity=None, exclude_order_id=None, client_id=None):
+    reserved_map = _get_reserved_qty_map(production_date, exclude_order_id=exclude_order_id)
+    daily_capacity = _to_decimal(dish.daily_capacity)
+    reserved_qty = _to_decimal(reserved_map.get(dish.id, 0) or 0)
+    available_qty = None
+    if daily_capacity is not None:
+        available_qty = max(daily_capacity - reserved_qty, Decimal("0"))
+
+    weight_per_unit = _to_decimal(dish.unit_weight_kg)
+    max_by_capacity = None
+    if max_capacity is not None:
+        remaining_capacity = max(_to_decimal(max_capacity) - _to_decimal(reserved_capacity or 0), Decimal("0"))
+        if dish.base_uom == Dish.BaseUom.KG:
+            max_by_capacity = remaining_capacity
+        elif dish.base_uom == Dish.BaseUom.PCS and weight_per_unit and weight_per_unit > 0:
+            max_by_capacity = remaining_capacity / weight_per_unit
+
+    max_by_ingredients = None
+    tech_card = _availability_tech_card(dish, client_id=client_id)
+    if tech_card:
+        ingredient_limits = []
+        for comp in TechCardComponent.objects.filter(tech_card=tech_card):
+            comp_qty = _to_decimal(comp.quantity)
+            if not comp_qty or comp_qty <= 0:
+                continue
+            stock = IngredientStock.objects.filter(ingredient_id=comp.ingredient_id).first()
+            stock_qty = _to_decimal(stock.quantity if stock else 0)
+            reserved_qs = IngredientReservation.objects.filter(
+                ingredient_id=comp.ingredient_id,
+                production_date=production_date,
+            )
+            if exclude_order_id:
+                reserved_qs = reserved_qs.exclude(order_id=exclude_order_id)
+            reserved_ingredient = _to_decimal(reserved_qs.aggregate(total=Sum("quantity"))["total"] or 0)
+            ingredient_limits.append(max(stock_qty - reserved_ingredient, Decimal("0")) / comp_qty)
+        if ingredient_limits:
+            max_by_ingredients = min(ingredient_limits)
+
+    limits = [v for v in [available_qty, max_by_capacity, max_by_ingredients] if v is not None]
+    max_order_qty = min(limits) if limits else None
+
+    return {
+        "daily_capacity": daily_capacity,
+        "reserved_qty": reserved_qty,
+        "available_qty": _round_max_qty(dish, available_qty),
+        "max_by_capacity": _round_max_qty(dish, max_by_capacity),
+        "max_by_ingredients": _round_max_qty(dish, max_by_ingredients),
+        "max_order_qty": _round_max_qty(dish, max_order_qty),
+        "tech_card": tech_card,
+    }
+
+
 def _validate_dish_capacity(order, items):
     production_date = order.production_date or order.delivery_date
-    reserved_map = _get_reserved_qty_map(production_date, exclude_order_id=order.id)
+    max_capacity = getattr(settings, "PRODUCTION_MAX_WEIGHT_KG", None)
+    reserved_capacity_qs = ProductionReservation.objects.filter(production_date=production_date)
+    reserved_capacity = _exclude_order_if_saved(reserved_capacity_qs, order).aggregate(total=Sum("weight_kg"))["total"] or 0
     requested_map = {}
     for item in items:
         if not item.dish_id:
@@ -121,14 +223,21 @@ def _validate_dish_capacity(order, items):
 
     errors = []
     for dish_id, requested_qty in requested_map.items():
-        dish = Dish.objects.filter(pk=dish_id).only("id", "name", "daily_capacity").first()
-        if not dish or dish.daily_capacity is None:
+        dish = Dish.objects.filter(pk=dish_id).first()
+        if not dish:
             continue
-        reserved_qty = reserved_map.get(dish_id, 0) or 0
-        available_qty = max(dish.daily_capacity - reserved_qty, 0)
-        if requested_qty > available_qty:
+        availability = _get_dish_availability(
+            dish,
+            production_date,
+            reserved_capacity=reserved_capacity,
+            max_capacity=max_capacity,
+            exclude_order_id=order.pk,
+            client_id=order.client_id,
+        )
+        max_order_qty = availability["max_order_qty"]
+        if max_order_qty is not None and requested_qty > max_order_qty:
             errors.append(
-                f"Недостаточная мощность для «{dish.name}»: доступно {available_qty}, запрошено {requested_qty}."
+                f"Для «{dish.name}» максимально можно добавить {max_order_qty}, запрошено {requested_qty}."
             )
     return errors
 
@@ -138,10 +247,19 @@ def _validate_order_capacity(order, items):
     warnings = []
     info = {}
 
+    today = timezone.localdate()
+    now_time = timezone.localtime().time()
+
     if order.delivery_date:
         cutoff = timezone.datetime.strptime(getattr(settings, "ORDER_CUTOFF_TIME", "16:00"), "%H:%M").time()
-        if order.delivery_date == timezone.now().date() and timezone.now().time() > cutoff:
+        if order.delivery_date == today and now_time > cutoff:
             errors.append("Заказ после допустимого времени. Перенесите дату доставки.")
+
+    if order.production_date and order.production_date < today:
+        errors.append(
+            f"Дата производства ({order.production_date}) уже прошла. "
+            "Выберите более позднюю дату или время доставки."
+        )
 
     total_weight = sum([_order_item_weight(i) for i in items])
     info["order_weight"] = total_weight
@@ -157,9 +275,8 @@ def _validate_order_capacity(order, items):
 
     max_capacity = getattr(settings, "PRODUCTION_MAX_WEIGHT_KG", None)
     if max_capacity is not None and order.production_date:
-        reserved = ProductionReservation.objects.filter(production_date=order.production_date).exclude(order=order).aggregate(
-            total=Sum("weight_kg")
-        )["total"] or 0
+        reserved_qs = ProductionReservation.objects.filter(production_date=order.production_date)
+        reserved = _exclude_order_if_saved(reserved_qs, order).aggregate(total=Sum("weight_kg"))["total"] or 0
         info["production_capacity"] = max_capacity
         info["production_reserved"] = reserved
         if reserved + total_weight > max_capacity:
@@ -183,9 +300,8 @@ def _validate_order_capacity(order, items):
     for eq_id, minutes in equipment_requirements.items():
         eq = DishEquipmentRequirement.objects.filter(equipment_id=eq_id).select_related("equipment").first().equipment
         available_hours = float(eq.available_hours or 0)
-        reserved_hours = EquipmentReservation.objects.filter(equipment=eq, production_date=order.production_date).exclude(
-            order=order
-        ).aggregate(total=Sum("hours"))["total"] or 0
+        reserved_hours_qs = EquipmentReservation.objects.filter(equipment=eq, production_date=order.production_date)
+        reserved_hours = _exclude_order_if_saved(reserved_hours_qs, order).aggregate(total=Sum("hours"))["total"] or 0
         required_hours = minutes / 60
         if available_hours and reserved_hours + required_hours > available_hours:
             errors.append(f"Превышен лимит оборудования: {eq.name}")
@@ -207,9 +323,11 @@ def _validate_order_capacity(order, items):
     for ingredient_id, qty in ingredients_need.items():
         stock = IngredientStock.objects.filter(ingredient_id=ingredient_id).first()
         available = stock.quantity if stock else 0
-        reserved = IngredientReservation.objects.filter(ingredient_id=ingredient_id, production_date=order.production_date).exclude(
-            order=order
-        ).aggregate(total=Sum("quantity"))["total"] or 0
+        reserved_qs = IngredientReservation.objects.filter(
+            ingredient_id=ingredient_id,
+            production_date=order.production_date,
+        )
+        reserved = _exclude_order_if_saved(reserved_qs, order).aggregate(total=Sum("quantity"))["total"] or 0
         missing = qty - (available - reserved)
         if missing > 0:
             ingredient = ingredients_map.get(ingredient_id)
@@ -243,6 +361,9 @@ def _reserve_resources(order):
     IngredientReservation.objects.filter(order=order).delete()
     EquipmentReservation.objects.filter(order=order).delete()
 
+    if not _order_reserves_resources(order):
+        return
+
     items = list(order.items.select_related("dish"))
     total_weight = sum([_order_item_weight(i) for i in items])
     if order.production_date:
@@ -255,12 +376,13 @@ def _reserve_resources(order):
                 qty = (comp.quantity or 0) * (item.quantity or 0)
                 ingredients_need[comp.ingredient_id] = ingredients_need.get(comp.ingredient_id, 0) + qty
     for ingredient_id, qty in ingredients_need.items():
-        IngredientReservation.objects.create(
-            order=order,
-            ingredient_id=ingredient_id,
-            production_date=order.production_date,
-            quantity=qty,
-        )
+        if order.production_date:
+            IngredientReservation.objects.create(
+                order=order,
+                ingredient_id=ingredient_id,
+                production_date=order.production_date,
+                quantity=qty,
+            )
 
     equipment_requirements = {}
     for item in items:
@@ -270,12 +392,13 @@ def _reserve_resources(order):
             minutes = (req.minutes_per_unit or 0) * (item.quantity or 0)
             equipment_requirements[req.equipment_id] = equipment_requirements.get(req.equipment_id, 0) + minutes
     for eq_id, minutes in equipment_requirements.items():
-        EquipmentReservation.objects.create(
-            order=order,
-            equipment_id=eq_id,
-            production_date=order.production_date,
-            hours=minutes / 60,
-        )
+        if order.production_date:
+            EquipmentReservation.objects.create(
+                order=order,
+                equipment_id=eq_id,
+                production_date=order.production_date,
+                hours=minutes / 60,
+            )
 
 
 @roles_required(["Менеджер", "Администратор системы"])
@@ -450,29 +573,43 @@ def order_edit(request, pk):
 @roles_required(["Менеджер", "Администратор системы"])
 def order_availability(request):
     delivery_date = request.GET.get("delivery_date")
+    delivery_time = request.GET.get("delivery_time")
     client_id = request.GET.get("client_id")
     order_id = request.GET.get("order_id")
     if not delivery_date:
         return HttpResponseBadRequest("delivery_date обязателен")
+    production_date = delivery_date
+    if delivery_time:
+        try:
+            parsed_date = timezone.datetime.fromisoformat(delivery_date).date()
+            parsed_time = timezone.datetime.strptime(delivery_time, "%H:%M").time()
+            morning_cutoff = timezone.datetime.strptime(
+                getattr(settings, "ORDER_MORNING_CUTOFF_TIME", "10:00"), "%H:%M"
+            ).time()
+            if parsed_time <= morning_cutoff:
+                production_date = parsed_date - timezone.timedelta(days=1)
+            else:
+                production_date = parsed_date
+        except ValueError:
+            production_date = delivery_date
     max_capacity = getattr(settings, "PRODUCTION_MAX_WEIGHT_KG", None)
-    reserved_map = _get_reserved_qty_map(delivery_date, exclude_order_id=order_id)
-    reserved_capacity = ProductionReservation.objects.filter(production_date=delivery_date).aggregate(
+    reserved_capacity = ProductionReservation.objects.filter(production_date=production_date).aggregate(
         total=Sum("weight_kg")
     )["total"] or 0
     dishes = []
     for dish in Dish.objects.filter(is_active=True).order_by("name"):
-        daily_capacity = float(dish.daily_capacity) if dish.daily_capacity is not None else None
-        reserved_qty = float(reserved_map.get(dish.id, 0) or 0)
-        available_qty = None
-        if daily_capacity is not None:
-            available_qty = max(daily_capacity - reserved_qty, 0)
+        availability = _get_dish_availability(
+            dish,
+            production_date,
+            reserved_capacity=reserved_capacity,
+            max_capacity=max_capacity,
+            exclude_order_id=order_id,
+            client_id=client_id,
+        )
+        daily_capacity = _format_qty(availability["daily_capacity"])
+        reserved_qty = _format_qty(availability["reserved_qty"])
+        available_qty = _format_qty(availability["available_qty"])
         weight_per_unit = float(dish.unit_weight_kg) if dish.unit_weight_kg is not None else None
-        max_by_capacity = None
-        if max_capacity is not None:
-            if dish.base_uom == Dish.BaseUom.KG:
-                max_by_capacity = max_capacity - reserved_capacity
-            elif dish.base_uom == Dish.BaseUom.PCS and weight_per_unit:
-                max_by_capacity = (max_capacity - reserved_capacity) / weight_per_unit
         dishes.append(
             {
                 "dish_id": dish.id,
@@ -482,9 +619,11 @@ def order_availability(request):
                 "quantity_scale": dish.quantity_scale,
                 "weight_per_unit_kg": weight_per_unit,
                 "daily_capacity": daily_capacity,
-                "reserved_qty": round(reserved_qty, 3),
-                "available_qty": round(available_qty, 3) if available_qty is not None else None,
-                "max_by_capacity": round(max_by_capacity, 3) if max_by_capacity is not None else None,
+                "reserved_qty": reserved_qty,
+                "available_qty": available_qty,
+                "max_by_capacity": _format_qty(availability["max_by_capacity"]),
+                "max_by_ingredients": _format_qty(availability["max_by_ingredients"]),
+                "max_order_qty": _format_qty(availability["max_order_qty"]),
                 "min_batch": float(dish.min_batch_qty) if dish.min_batch_qty else None,
                 "step": float(dish.batch_multiple_qty) if dish.batch_multiple_qty else None,
                 "price": float(dish.default_price) if dish.default_price is not None else None,
@@ -492,7 +631,7 @@ def order_availability(request):
         )
     return JsonResponse(
         {
-            "production_date": delivery_date,
+            "production_date": production_date,
             "capacity_total": max_capacity if max_capacity is not None else 0,
             "capacity_reserved": reserved_capacity,
             "capacity_available": max_capacity - reserved_capacity if max_capacity is not None else 0,
@@ -537,8 +676,28 @@ def order_status_update(request, pk):
     if request.method == "POST":
         status = request.POST.get("status")
         if status in dict(OrderStatus.choices):
+            previous_status = obj.status
             obj.status = status
-            obj.save(update_fields=["status"])
+            _apply_production_fields(obj)
+            if obj.status in RESERVED_STATUSES:
+                items = list(obj.items.select_related("dish", "custom_tech_card"))
+                errors, warnings, info = _validate_order_capacity(obj, items)
+                errors.extend(_validate_dish_capacity(obj, items))
+                if errors:
+                    obj.status = previous_status
+                    for err in errors:
+                        messages.error(request, err)
+                    return redirect(request.META.get("HTTP_REFERER", "/orders/"))
+            obj.save(
+                update_fields=[
+                    "status",
+                    "production_date",
+                    "production_shift",
+                    "production_window_start",
+                    "production_window_end",
+                ]
+            )
+            _reserve_resources(obj)
             if status in [OrderStatus.CONFIRMED, OrderStatus.READY_TO_SHIP, OrderStatus.SHIPPED] and not obj.deliveries.exists():
                 Delivery.objects.create(
                     order=obj,

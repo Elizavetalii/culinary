@@ -83,6 +83,9 @@ DATABASES = {
     }
 }
 
+PG_DUMP_PATH = os.environ.get('PG_DUMP_PATH', 'pg_dump')
+PSQL_PATH = os.environ.get('PSQL_PATH', 'psql')
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',

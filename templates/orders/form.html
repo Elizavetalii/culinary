@@ -170,6 +170,8 @@
       (function() {
         const body = document.getElementById("items-body");
         const dateInput = document.getElementById("id_delivery_date");
+        const timeInput = document.getElementById("id_delivery_time");
+        const clientInput = document.getElementById("id_client");
         const totalInput = document.getElementById("id_total_amount");
         const form = document.querySelector("form[data-order-id]");
         const warning = document.getElementById("qty-warning");
@@ -182,7 +184,7 @@
         if (!body) return;
 
         const dishCache = new Map();
-        let lastDate = null;
+        let lastAvailabilityKey = null;
         const moneyFormatter = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         function formatDateLocal(date) {
@@ -199,15 +201,26 @@
           return formatDateLocal(new Date());
         }
 
+        function getDeliveryTime() {
+          return timeInput && timeInput.value ? timeInput.value : "";
+        }
+
+        function getClientId() {
+          return clientInput && clientInput.value ? clientInput.value : "";
+        }
+
         function fetchPrices() {
           const deliveryDate = getDeliveryDate();
-          if (deliveryDate === lastDate && dishCache.size) {
+          const deliveryTime = getDeliveryTime();
+          const clientId = getClientId();
+          const availabilityKey = `${deliveryDate}T${deliveryTime}:${clientId}`;
+          if (availabilityKey === lastAvailabilityKey && dishCache.size) {
             return Promise.resolve();
           }
-          lastDate = deliveryDate;
+          lastAvailabilityKey = availabilityKey;
           dishCache.clear();
           const orderId = form && form.dataset.orderId ? form.dataset.orderId : "";
-          const url = `/api/orders/availability/?delivery_date=${encodeURIComponent(deliveryDate)}${orderId ? `&order_id=${encodeURIComponent(orderId)}` : ""}`;
+          const url = `/api/orders/availability/?delivery_date=${encodeURIComponent(deliveryDate)}${deliveryTime ? `&delivery_time=${encodeURIComponent(deliveryTime)}` : ""}${clientId ? `&client_id=${encodeURIComponent(clientId)}` : ""}${orderId ? `&order_id=${encodeURIComponent(orderId)}` : ""}`;
           return fetch(url, { headers: { "Accept": "application/json" } })
             .then((response) => {
               if (!response.ok) {
@@ -228,6 +241,8 @@
                   dailyCapacity: dish.daily_capacity,
                   reservedQty: dish.reserved_qty,
                   maxByCapacity: dish.max_by_capacity,
+                  maxByIngredients: dish.max_by_ingredients,
+                  maxOrderQty: dish.max_order_qty,
                 });
               });
             })
@@ -247,13 +262,13 @@
         function setAvailableQty(row, entry) {
           const container = row.querySelector(".available-qty");
           if (!container) return;
-          if (!entry || entry.availableQty === null || entry.availableQty === undefined) {
+          if (!entry || entry.maxOrderQty === null || entry.maxOrderQty === undefined) {
             container.textContent = "";
             return;
           }
           const unit = entry.unit ? ` ${entry.unit}` : "";
           const scale = entry.quantityScale !== undefined ? entry.quantityScale : 3;
-          container.textContent = `Доступно: ${formatQty(Number(entry.availableQty), scale)}${unit}`;
+          container.textContent = `Максимум: ${formatQty(Number(entry.maxOrderQty), scale)}${unit}`;
         }
 
         function parseNumber(value) {
@@ -397,7 +412,7 @@
               setRowPrice(row, entry.price);
             }
             setAvailableQty(row, entry);
-            applyQtyLimit(row, entry.availableQty);
+            applyQtyLimit(row, entry.maxOrderQty);
             configureQuantityInput(row, entry);
           } else {
             setAvailableQty(row, null);
@@ -441,7 +456,7 @@
                       }
                     }
                   }
-                  applyQtyLimit(row, entry.availableQty);
+                  applyQtyLimit(row, entry.maxOrderQty);
                 }
               }
               updateLineTotal(row);
@@ -456,6 +471,22 @@
               refreshAllRows();
               showWarning("Цены пересчитаны по новой дате.");
             });
+          });
+        }
+
+        if (timeInput) {
+          timeInput.addEventListener("change", () => {
+            if (dateInput && dateInput.value) {
+              fetchPrices().then(refreshAllRows);
+            }
+          });
+        }
+
+        if (clientInput) {
+          clientInput.addEventListener("change", () => {
+            if (dateInput && dateInput.value) {
+              fetchPrices().then(refreshAllRows);
+            }
           });
         }
 

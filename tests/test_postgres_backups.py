@@ -22,6 +22,7 @@ class PostgresBackupTests(TransactionTestCase):
         UserRole.objects.create(user=self.admin, role=role)
 
     @override_settings(
+        PG_DUMP_PATH="/usr/lib/postgresql/16/bin/pg_dump",
         DATABASES={
             "default": {
                 "ENGINE": "django.db.backends.postgresql",
@@ -43,7 +44,7 @@ class PostgresBackupTests(TransactionTestCase):
         self.assertEqual(response.status_code, 302)
         run_mock.assert_called_once()
         command = run_mock.call_args.args[0]
-        self.assertEqual(command[0], "pg_dump")
+        self.assertEqual(command[0], "/usr/lib/postgresql/16/bin/pg_dump")
         self.assertIn("--clean", command)
         self.assertIn("--if-exists", command)
         self.assertIn("--exclude-table-data=admin_panel_backup", command)
@@ -83,6 +84,7 @@ class PostgresBackupTests(TransactionTestCase):
         self.assertEqual(Path(backup.file_path).parent.resolve(), Path(backup_dir).resolve())
 
     @override_settings(
+        PSQL_PATH="/usr/lib/postgresql/16/bin/psql",
         DATABASES={
             "default": {
                 "ENGINE": "django.db.backends.postgresql",
@@ -107,7 +109,7 @@ class PostgresBackupTests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 302)
         command = run_mock.call_args.args[0]
-        self.assertEqual(command[0], "psql")
+        self.assertEqual(command[0], "/usr/lib/postgresql/16/bin/psql")
         self.assertIn("-f", command)
         self.assertIn(str(backup_file), command)
         backup.refresh_from_db()

@@ -1,11 +1,26 @@
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from django.test import TestCase
 from django.utils import timezone
 
-from crm.models import Client, Dish, Order, OrderItem, OrderStatus, User
+from crm.models import (
+    Client,
+    Dish,
+    Ingredient,
+    IngredientReservation,
+    IngredientStock,
+    Order,
+    OrderItem,
+    OrderStatus,
+    ProductionReservation,
+    Role,
+    TechCard,
+    TechCardComponent,
+    User,
+    UserRole,
+)
 from orders.forms import OrderForm, OrderItemForm
-from orders.views import _get_reserved_qty_map
+from orders.views import _apply_production_fields, _get_reserved_qty_map, _reserve_resources, _validate_order_capacity
 
 
 class OrderFormTests(TestCase):
@@ -137,3 +152,210 @@ class ReservedQtyTests(TestCase):
         reserved = _get_reserved_qty_map(production_day)
 
         self.assertEqual(reserved.get(self.dish.id), 6)
+
+
+class OrderReservationTests(TestCase):
+    def setUp(self):
+        self.client_obj = Client.objects.create(name="Test Client")
+        self.dish = Dish.objects.create(
+            name="Котлета",
+            unit="шт",
+            daily_capacity=100,
+            default_price=50,
+            unit_weight_kg=1,
+        )
+        self.ingredient = Ingredient.objects.create(name="Фарш")
+        IngredientStock.objects.create(ingredient=self.ingredient, quantity=100)
+        self.tech_card = TechCard.objects.create(dish=self.dish, version_label="1", is_active=True)
+        TechCardComponent.objects.create(
+            tech_card=self.tech_card,
+            ingredient=self.ingredient,
+            quantity=2,
+        )
+
+    def test_review_order_does_not_create_resource_reservations(self):
+        day = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            order_number="ORD-REVIEW",
+            client=self.client_obj,
+            status=OrderStatus.REVIEW,
+            delivery_date=day,
+            delivery_time=time(12, 0),
+        )
+        _apply_production_fields(order)
+        order.save()
+        OrderItem.objects.create(
+            order=order,
+            dish=self.dish,
+            custom_tech_card=self.tech_card,
+            quantity=3,
+            unit_price=50,
+        )
+
+        _reserve_resources(order)
+
+        self.assertFalse(ProductionReservation.objects.filter(order=order).exists())
+        self.assertFalse(IngredientReservation.objects.filter(order=order).exists())
+
+    def test_confirmed_order_creates_resource_reservations(self):
+        day = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            order_number="ORD-CONFIRMED",
+            client=self.client_obj,
+            status=OrderStatus.CONFIRMED,
+            delivery_date=day,
+            delivery_time=time(12, 0),
+        )
+        _apply_production_fields(order)
+        order.save()
+        OrderItem.objects.create(
+            order=order,
+            dish=self.dish,
+            custom_tech_card=self.tech_card,
+            quantity=3,
+            unit_price=50,
+        )
+
+        _reserve_resources(order)
+
+        self.assertEqual(ProductionReservation.objects.filter(order=order).count(), 1)
+        reservation = IngredientReservation.objects.get(order=order, ingredient=self.ingredient)
+        self.assertEqual(reservation.quantity, 6)
+
+    def test_morning_delivery_today_is_rejected_instead_of_saving_past_production_date(self):
+        today = timezone.localdate()
+        form = OrderForm(
+            data={
+                "order_number": "",
+                "client": self.client_obj.id,
+                "status": OrderStatus.DRAFT,
+                "address": "Test address",
+                "delivery_date": today.isoformat(),
+                "delivery_time": "09:00",
+                "delivery_type": "Разовая",
+                "comments": "",
+                "total_amount": "0.00",
+            }
+        )
+        self.assertTrue(form.is_valid())
+        order = form.save(commit=False)
+        _apply_production_fields(order)
+        errors, warnings, info = _validate_order_capacity(order, [])
+
+        self.assertLess(order.production_date, today)
+        self.assertTrue(any("Дата производства" in err for err in errors))
+
+
+class OrderCreateFlowTests(TestCase):
+    def setUp(self):
+        self.role = Role.objects.create(name="Менеджер")
+        self.user = User.objects.create_user(
+            username="manager2",
+            email="manager2@example.com",
+            password="pass12345",
+            full_name="Manager Two",
+        )
+        UserRole.objects.create(user=self.user, role=self.role)
+        self.client_obj = Client.objects.create(name="Test Client")
+        self.dish = Dish.objects.create(name="Котлета", unit="шт", daily_capacity=100, default_price=50)
+        self.ingredient = Ingredient.objects.create(name="Фарш")
+        IngredientStock.objects.create(ingredient=self.ingredient, quantity=100)
+        self.tech_card = TechCard.objects.create(dish=self.dish, version_label="1", is_active=True)
+        TechCardComponent.objects.create(
+            tech_card=self.tech_card,
+            ingredient=self.ingredient,
+            quantity=2,
+        )
+
+    def test_create_order_saves_review_without_resource_reservations(self):
+        self.client.force_login(self.user)
+        day = timezone.localdate() + timedelta(days=2)
+
+        response = self.client.post(
+            "/orders/create/",
+            {
+                "order_number": "",
+                "client": self.client_obj.id,
+                "status": OrderStatus.DRAFT,
+                "address": "Test address",
+                "delivery_date": day.isoformat(),
+                "delivery_time": "12:00",
+                "delivery_type": "Разовая",
+                "comments": "",
+                "total_amount": "0.00",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "1000",
+                "form-0-dish": self.dish.id,
+                "form-0-quantity": "3",
+                "form-0-unit_price": "50.00",
+                "form-0-supply_type": "",
+                "form-0-item_comment": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        order = Order.objects.get(client=self.client_obj)
+        self.assertEqual(order.status, OrderStatus.REVIEW)
+        self.assertFalse(ProductionReservation.objects.filter(order=order).exists())
+        self.assertFalse(IngredientReservation.objects.filter(order=order).exists())
+
+    def test_create_order_rejects_quantity_above_available_max(self):
+        self.client.force_login(self.user)
+        day = timezone.localdate() + timedelta(days=2)
+
+        response = self.client.post(
+            "/orders/create/",
+            {
+                "order_number": "",
+                "client": self.client_obj.id,
+                "status": OrderStatus.DRAFT,
+                "address": "Test address",
+                "delivery_date": day.isoformat(),
+                "delivery_time": "12:00",
+                "delivery_type": "Разовая",
+                "comments": "",
+                "total_amount": "0.00",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "1000",
+                "form-0-dish": self.dish.id,
+                "form-0-quantity": "51",
+                "form-0-unit_price": "50.00",
+                "form-0-supply_type": "",
+                "form-0-item_comment": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Order.objects.filter(client=self.client_obj).exists())
+        self.assertContains(response, "максимально можно добавить")
+
+    def test_availability_uses_previous_production_date_for_morning_delivery(self):
+        self.client.force_login(self.user)
+        production_day = timezone.localdate() + timedelta(days=2)
+        delivery_day = production_day + timedelta(days=1)
+        order = Order.objects.create(
+            order_number="ORD-MORNING",
+            client=self.client_obj,
+            status=OrderStatus.CONFIRMED,
+            delivery_date=delivery_day,
+            delivery_time=time(9, 0),
+            production_date=production_day,
+        )
+        OrderItem.objects.create(order=order, dish=self.dish, quantity=7, unit_price=50)
+
+        response = self.client.get(
+            "/api/orders/availability/",
+            {"delivery_date": delivery_day.isoformat(), "delivery_time": "09:00"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["production_date"], production_day.isoformat())
+        dish_payload = next(item for item in payload["dishes"] if item["dish_id"] == self.dish.id)
+        self.assertEqual(dish_payload["reserved_qty"], 7)
+        self.assertEqual(dish_payload["max_order_qty"], 50)
+        self.assertEqual(dish_payload["max_by_ingredients"], 50)

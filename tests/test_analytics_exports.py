@@ -1,10 +1,11 @@
-from datetime import date
+from calendar import monthrange
 from decimal import Decimal
 from zipfile import ZipFile
 
 from django.core.files.storage import default_storage
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from crm.models import (
     Client,
@@ -16,7 +17,7 @@ from crm.models import (
     UserRole,
 )
 from reports.models import Report
-from reports.services import build_analytics_report, create_analytics_report_file
+from reports.services import build_analytics_report, create_analytics_report_file, render_report_pdf
 
 
 class AnalyticsExportTests(TestCase):
@@ -46,26 +47,31 @@ class AnalyticsExportTests(TestCase):
             status="active",
             responsible_manager=self.manager,
         )
+        self.report_day = timezone.localdate()
+        self.period_from = self.report_day.replace(day=1)
+        self.period_to = self.report_day.replace(
+            day=monthrange(self.report_day.year, self.report_day.month)[1]
+        )
         order = Order.objects.create(
             order_number="ORD-T-001",
             client=client,
             manager=self.manager,
             status=OrderStatus.SHIPPED,
-            delivery_date=date(2026, 5, 13),
+            delivery_date=self.report_day,
             total_amount=Decimal("1200.00"),
         )
         Delivery.objects.create(
             order=order,
             status=Delivery.DeliveryStatus.DELIVERED,
-            delivery_date=date(2026, 5, 13),
+            delivery_date=self.report_day,
             address="Москва, Тестовая, 1",
         )
 
     def test_build_admin_analytics_report_contains_sales_and_admin_sections(self):
         payload = build_analytics_report(
             scope="admin",
-            period_from=date(2026, 5, 1),
-            period_to=date(2026, 5, 31),
+            period_from=self.period_from,
+            period_to=self.period_to,
         )
 
         self.assertEqual(payload["summary"]["orders"], 1)
@@ -80,8 +86,8 @@ class AnalyticsExportTests(TestCase):
                 report = create_analytics_report_file(
                     scope="admin",
                     fmt=fmt,
-                    period_from=date(2026, 5, 1),
-                    period_to=date(2026, 5, 31),
+                    period_from=self.period_from,
+                    period_to=self.period_to,
                     user=self.admin,
                 )
 
@@ -95,12 +101,25 @@ class AnalyticsExportTests(TestCase):
                         with ZipFile(fh) as archive:
                             self.assertTrue(archive.namelist())
 
+    def test_pdf_export_embeds_unicode_font_for_cyrillic(self):
+        payload = build_analytics_report(
+            scope="admin",
+            period_from=self.period_from,
+            period_to=self.period_to,
+        )
+
+        content = render_report_pdf(payload)
+
+        self.assertTrue(content.startswith(b"%PDF-"))
+        self.assertIn(b"/FontFile", content)
+        self.assertGreater(len(content), 10000)
+
     def test_admin_analytics_export_view_creates_report_and_redirects_to_file(self):
         self.client.force_login(self.admin)
 
         response = self.client.get(
             reverse("admin-analytics-export"),
-            {"format": "csv", "from": "2026-05-01", "to": "2026-05-31"},
+            {"format": "csv", "from": self.period_from.isoformat(), "to": self.period_to.isoformat()},
         )
 
         self.assertEqual(response.status_code, 302)
@@ -122,7 +141,7 @@ class AnalyticsExportTests(TestCase):
 
         response = self.client.get(
             reverse("reports-analytics-export"),
-            {"format": "html", "from": "2026-05-01", "to": "2026-05-31"},
+            {"format": "html", "from": self.period_from.isoformat(), "to": self.period_to.isoformat()},
         )
 
         self.assertEqual(response.status_code, 302)

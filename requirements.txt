@@ -6,3 +6,4 @@ djangorestframework-simplejwt==5.3.1
 django-filter==24.3
 django-cors-headers==4.4.0
 Faker==24.8.0
+reportlab==4.5.1

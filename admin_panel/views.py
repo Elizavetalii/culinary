@@ -69,6 +69,14 @@ def _backup_file_path(backup: Backup) -> Path:
     return Path(settings.MEDIA_ROOT) / path
 
 
+def _missing_postgres_client_message(command_name: str, setting_name: str) -> str:
+    return (
+        f"Команда {command_name} не найдена на сервере. "
+        f"Установите PostgreSQL client tools или задайте {setting_name} "
+        "с полным путем к исполняемому файлу."
+    )
+
+
 def _cleanup_legacy_user_refs(user_id: int) -> None:
     """
     Remove references from legacy tables that might still have FK to crm_user
@@ -278,7 +286,7 @@ def backup_create(request):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = backup_dir / f"backup_{ts}.sql"
     command = [
-        "pg_dump",
+        settings.PG_DUMP_PATH,
         "-h",
         str(db_settings.get("HOST") or "localhost"),
         "-p",
@@ -300,6 +308,13 @@ def backup_create(request):
         env["PGPASSWORD"] = str(db_settings["PASSWORD"])
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, env=env)
+    except FileNotFoundError:
+        messages.error(
+            request,
+            f"Не удалось создать PostgreSQL-бэкап: "
+            f"{_missing_postgres_client_message('pg_dump', 'PG_DUMP_PATH')}",
+        )
+        return redirect("/admin-panel/backups/")
     except (OSError, subprocess.CalledProcessError) as exc:
         message = getattr(exc, "stderr", "") or str(exc)
         messages.error(request, f"Не удалось создать PostgreSQL-бэкап: {message}")
@@ -323,7 +338,7 @@ def backup_restore(request, pk):
         else:
             connection.close()
             command = [
-                "psql",
+                settings.PSQL_PATH,
                 "-h",
                 str(db_settings.get("HOST") or "localhost"),
                 "-p",
@@ -340,6 +355,15 @@ def backup_restore(request, pk):
                 env["PGPASSWORD"] = str(db_settings["PASSWORD"])
             try:
                 subprocess.run(command, check=True, capture_output=True, text=True, env=env)
+            except FileNotFoundError:
+                connection.connect()
+                Backup.objects.filter(pk=backup.pk).update(status="failed")
+                messages.error(
+                    request,
+                    f"Не удалось восстановить PostgreSQL-бэкап: "
+                    f"{_missing_postgres_client_message('psql', 'PSQL_PATH')}",
+                )
+                return redirect("/admin-panel/backups/")
             except (OSError, subprocess.CalledProcessError) as exc:
                 connection.connect()
                 Backup.objects.filter(pk=backup.pk).update(status="failed")
@@ -526,6 +550,16 @@ def _entity_form_class(model, exclude_fields=None):
                     self.initial["phone"] = format_russian_phone_for_display(self.instance.phone)
             if "email" in self.fields:
                 self.fields["email"].error_messages["invalid"] = self.error_messages["email_invalid"]
+            if model is Order and "order_number" in self.fields:
+                self.fields["order_number"].required = False
+                self.fields["order_number"].widget.attrs.setdefault("readonly", True)
+                self.fields["order_number"].widget.attrs.pop("required", None)
+                if not self.instance.pk and not self.instance.order_number:
+                    self.fields["order_number"].initial = Order.generate_order_number()
+            if model is Order and "total_amount" in self.fields:
+                self.fields["total_amount"].widget.attrs.setdefault("readonly", True)
+                self.fields["total_amount"].widget.attrs.setdefault("inputmode", "decimal")
+                self.fields["total_amount"].widget.attrs.setdefault("step", "0.01")
             if "inn" in self.fields:
                 self.fields["inn"].widget.attrs.update({"inputmode": "numeric", "maxlength": "12", "pattern": r"\d{10}|\d{12}"})
             if "kpp" in self.fields:
@@ -536,6 +570,8 @@ def _entity_form_class(model, exclude_fields=None):
                     field.widget.attrs.setdefault("data-size", "full")
                 if isinstance(field, forms.DateField) and not isinstance(field, forms.DateTimeField):
                     field.widget.attrs.setdefault("type", "date")
+                if isinstance(field, forms.TimeField):
+                    field.widget.attrs.setdefault("type", "time")
                 if isinstance(field, forms.DateTimeField):
                     field.widget.attrs.setdefault("type", "datetime-local")
 
@@ -558,6 +594,12 @@ def _entity_form_class(model, exclude_fields=None):
 
         def clean_email(self):
             return validate_optional_email(self.cleaned_data.get("email"), self.error_messages["email_invalid"])
+
+        def clean_order_number(self):
+            value = self.cleaned_data.get("order_number")
+            if model is Order and not value:
+                return Order.generate_order_number()
+            return value
 
     return EntityForm
 
@@ -713,6 +755,8 @@ def entity_create(request, slug):
                 user.save()
                 user.roles.set(roles)
             else:
+                if isinstance(obj, Order) and not obj.order_number:
+                    obj.order_number = Order.generate_order_number()
                 obj.save()
                 if hasattr(form, "save_m2m"):
                     form.save_m2m()
