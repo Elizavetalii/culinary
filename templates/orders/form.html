@@ -97,6 +97,9 @@
               <tbody id="items-body">
                 {% for f in formset %}
                   <tr class="item-row">
+                    {% for hidden in f.hidden_fields %}
+                      {{ hidden }}
+                    {% endfor %}
                     <td>{{ f.dish }}</td>
                     <td>
                       {{ f.quantity }}
@@ -139,6 +142,9 @@
   {% if formset %}
     <template id="empty-form">
       <tr class="item-row">
+        {% for hidden in formset.empty_form.hidden_fields %}
+          {{ hidden }}
+        {% endfor %}
         <td>{{ formset.empty_form.dish }}</td>
         <td>
           {{ formset.empty_form.quantity }}

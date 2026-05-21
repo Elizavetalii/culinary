@@ -359,3 +359,90 @@ class OrderCreateFlowTests(TestCase):
         self.assertEqual(dish_payload["reserved_qty"], 7)
         self.assertEqual(dish_payload["max_order_qty"], 50)
         self.assertEqual(dish_payload["max_by_ingredients"], 50)
+
+    def test_edit_order_renders_existing_item_hidden_id(self):
+        self.client.force_login(self.user)
+        day = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            order_number=Order.generate_order_number(),
+            client=self.client_obj,
+            status=OrderStatus.REVIEW,
+            delivery_date=day,
+            delivery_time=time(12, 0),
+        )
+        item = OrderItem.objects.create(order=order, dish=self.dish, quantity=3, unit_price=50)
+
+        response = self.client.get(f"/orders/{order.pk}/edit/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'name="form-0-id" value="{item.pk}"')
+
+    def test_edit_order_updates_existing_item(self):
+        self.client.force_login(self.user)
+        day = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            order_number=Order.generate_order_number(),
+            client=self.client_obj,
+            status=OrderStatus.REVIEW,
+            address="Old address",
+            delivery_date=day,
+            delivery_time=time(12, 0),
+        )
+        item = OrderItem.objects.create(order=order, dish=self.dish, quantity=3, unit_price=50)
+
+        response = self.client.post(
+            f"/orders/{order.pk}/edit/",
+            {
+                "order_number": order.order_number,
+                "client": self.client_obj.id,
+                "status": OrderStatus.REVIEW,
+                "address": "Updated address",
+                "delivery_date": day.isoformat(),
+                "delivery_time": "13:30",
+                "delivery_type": "Разовая",
+                "comments": "Updated comment",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "1",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "1000",
+                "form-0-id": item.pk,
+                "form-0-dish": self.dish.id,
+                "form-0-quantity": "5",
+                "form-0-unit_price": "50.00",
+                "form-0-supply_type": "",
+                "form-0-item_comment": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.address, "Updated address")
+        self.assertEqual(order.delivery_time, time(13, 30))
+        self.assertEqual(item.quantity, 5)
+        self.assertEqual(order.items.count(), 1)
+
+    def test_picker_order_detail_renders_existing_item_hidden_id(self):
+        picker_role = Role.objects.create(name="Сборщик заказов")
+        picker = User.objects.create_user(
+            username="picker2",
+            email="picker2@example.com",
+            password="pass12345",
+            full_name="Picker Two",
+        )
+        UserRole.objects.create(user=picker, role=picker_role)
+        self.client.force_login(picker)
+        day = timezone.localdate() + timedelta(days=2)
+        order = Order.objects.create(
+            order_number=Order.generate_order_number(),
+            client=self.client_obj,
+            status=OrderStatus.CONFIRMED,
+            delivery_date=day,
+            delivery_time=time(12, 0),
+        )
+        item = OrderItem.objects.create(order=order, dish=self.dish, quantity=3, unit_price=50)
+
+        response = self.client.get(f"/orders/picker/{order.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'name="form-0-id" value="{item.pk}"')

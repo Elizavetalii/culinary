@@ -65,6 +65,9 @@
           <tbody>
             {% for form in formset %}
               <tr>
+                {% for hidden in form.hidden_fields %}
+                  {{ hidden }}
+                {% endfor %}
                 <td class="fw-semibold">{{ form.instance.display_name }}</td>
                 <td>{{ form.instance.quantity }}</td>
                 <td>{{ form.picked_quantity }}</td>
