@@ -610,7 +610,7 @@ def courier_stop_update(request, pk):
                 stop.route.save(update_fields=["status"])
         _log_action(request.user, stop, "status", old_status, new_status)
         messages.success(request, "Статус остановки обновлён.")
-    return redirect(f"/courier/routes/{stop.route.id}/")
+    return redirect("courier-route-detail", pk=stop.route.id)
 
 
 @role_required("Курьер")
@@ -651,7 +651,7 @@ def courier_upload_proof(request, pk):
         )
         _log_action(request.user, stop, "proof_of_delivery", "", stop.proof_of_delivery.name)
         messages.success(request, "Документ загружен.")
-    return redirect(f"/courier/routes/{stop.route.id}/")
+    return redirect("courier-route-detail", pk=stop.route.id)
 
 
 @role_required("Менеджер")

@@ -115,6 +115,7 @@ class LogisticsRulesTests(TestCase):
             {"proof_of_delivery": file, "status": "Доставлено"},
         )
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/logistics/courier/routes/{route.id}/")
 
     @override_settings(LOGISTICS_MAX_PROOF_SIZE_MB=1)
     def test_courier_proof_size_is_limited(self):
